@@ -5,3 +5,12 @@ version = 4
 [[package]]
 name = "super-swipe-type"
 version = "0.1.0"
+dependencies = [
+ "vector2",
+]
+
+[[package]]
+name = "vector2"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f562f8d4f41867568374e1a63bd12914795f558319f9bf9b0582c4d96a8de04"
