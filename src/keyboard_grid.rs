@@ -59,4 +59,12 @@ impl QwertyKeyboardGrid {
         }
         closest_char
     }
+    // convert chars to token index for models
+    pub fn get_char_token_index(char: char) -> i32 {
+        if char >= 'a' && char <= 'z' {
+            char as i32 - 'a' as i32 + 4
+        } else {
+            0 // padding index
+        }
+    }
 }
