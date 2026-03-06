@@ -5,8 +5,8 @@ use ort::Error;
 use ort::value::Tensor;
 use crate::Decoder;
 const PAD_IDX: i32 = 0;
-const SOS_IDX: i32= 2;
-const EOS_IDX: i32 = 3;
+pub const SOS_IDX: i32= 2;
+pub const EOS_IDX: i32 = 3;
 const DECODER_SEQ_LEN: usize = 20; // Must match model export
 
 impl Decoder {

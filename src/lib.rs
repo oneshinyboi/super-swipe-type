@@ -15,7 +15,7 @@ use ort::value::Tensor;
 use vector2::Vector2;
 use crate::encoder::EncodeResult;
 
-// todo: beamsearch, wordlist
+// todo: beam search, wordlist, orchestrator
 // done: feature extractor, decoder, encoder
 pub struct SwipeOrchestrator {
 }
@@ -82,6 +82,42 @@ mod tests {
         }];
 
         assert!(encoder.encode(features).is_ok());
+    }
+
+    #[test]
+    fn test_decoder() {
+        let encoder_session = Session::builder().unwrap().commit_from_file("assets/swipe_encoder_android.onnx").unwrap();
+        let decoder_session = Session::builder().unwrap().commit_from_file("assets/swipe_decoder_android.onnx").unwrap();
+        let keyboard_manager = QwertyKeyboardGrid::new();
+
+        let features = vec![
+            FeaturePoint{
+                point: Vector2 {x: 0.2, y: 0.4},
+                velocity: Default::default(),
+                acceleration: Default::default(),
+                nearest_key: keyboard_manager.get_nearest_key(&Vector2 { x: 0.2, y: 0.4 }),
+            },
+            FeaturePoint {
+                point: Vector2 {x: 0.7, y: 0.3},
+                velocity: Default::default(),
+                acceleration: Default::default(),
+                nearest_key: keyboard_manager.get_nearest_key(&Vector2 { x: 0.7, y: 0.3 }),
+            }];
+        let encoder = Encoder {
+            session: encoder_session,
+            max_sequence_length: 250
+        };
+        let result = encoder.encode(features);
+        assert!(result.is_ok());
+
+        let decoder = Decoder {
+            session: decoder_session,
+            encode_result: result.unwrap(),
+            max_sequence_length: 250,
+        };
+
+        let decode_result = decoder.decode_sequential(&vec![decoder::SOS_IDX].to_vec());
+        assert!(decode_result.is_ok());
     }
 
 }
