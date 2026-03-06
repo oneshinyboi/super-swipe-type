@@ -1,16 +1,16 @@
 mod swipe_trajectory_processor;
 mod keyboard_grid;
 
+use std::collections::HashMap;
 use std::ops::Sub;
 use std::time::{Duration, Instant};
 use vector2::Vector2;
-use crate::keyboard_grid::QwertyKeyboardGrid;
 
 // todo: encoder, decoder, beamsearch, wordlist
 // done: feature extracter
 
 #[derive(Clone)]
-struct SwipePoint {
+pub struct SwipePoint {
     point: Vector2,
     timestamp: Duration,
 }
@@ -20,6 +20,9 @@ struct FeaturePoint {
     velocity: Vector2,
     acceleration: Vector2,
     nearest_key: Option<char>,
+}
+struct QwertyKeyboardGrid {
+    key_positions: HashMap<char, Vector2>
 }
 struct SwipeTrajectoryProcessor {
     keyboard_grid: QwertyKeyboardGrid

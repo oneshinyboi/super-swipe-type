@@ -1,7 +1,8 @@
 use std::collections::HashMap;
-use std::iter::Map;
 use vector2::Vector2;
+use crate::QwertyKeyboardGrid;
 
+// use same keyboard specs as used in training models
 const KEY_WIDTH: f64 = 0.1;
 const ROW_HEIGHT: f64 = 1.0/3.0;
 const ROW_0: &str = "qwertyuiop";
@@ -11,9 +12,7 @@ const ROW_0_OFFSET: f64 = 0.0;
 const ROW_1_OFFSET: f64 = 0.05;
 const ROW_2_OFFSET: f64 = 0.15;
 
-pub struct QwertyKeyboardGrid {
-    key_positions: HashMap<char, Vector2>
-}
+
 impl QwertyKeyboardGrid {
     pub fn new() -> Self {
         Self {

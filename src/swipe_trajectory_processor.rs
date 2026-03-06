@@ -1,6 +1,5 @@
 use vector2::Vector2;
-use crate::{FeaturePoint, SwipePoint, SwipeTrajectoryProcessor};
-use crate::keyboard_grid::QwertyKeyboardGrid;
+use crate::{FeaturePoint, QwertyKeyboardGrid, SwipePoint, SwipeTrajectoryProcessor};
 
 impl SwipeTrajectoryProcessor {
     pub fn new() -> Self {
