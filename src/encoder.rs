@@ -1,25 +1,60 @@
-use crate::{Encoder, FeaturePoint};
+use crate::{Encoder, FeaturePoint, QwertyKeyboardGrid};
 use ort::value::{DynTensor, Tensor};
 use std::collections::HashMap;
+use ort::Error;
+
 const INPUT_TRAJECTORY_FEATURES: &str = "trajectory_features";
 const INPUT_NEAREST_KEYS: &str = "nearest_keys";
 const INPUT_ACTUAL_LENGTH: &str = "actual_length";
+pub(crate) struct EncodeResult {
+    pub memory_tensor: Tensor<f32>,
+    pub actual_length_tensor: Tensor<i32>,
+}
 impl Encoder {
-    pub fn encode(&self, features: Vec<FeaturePoint>) {
-        let trajectory_tensor = self.tensor_factory.create_trajectory_tensor(&features);
-        let nearest_keys_tensor = self.tensor_factory.create_nearest_keys_tensor(&features);
-        let actual_length_tensor = Tensor::from_array(([1], vec![features.len() as i32].to_vec()));
+    // encodes swipe features and returns memory tensor of encoder
+    pub fn encode(mut self, features: Vec<FeaturePoint>) -> Result<EncodeResult, Error> {
+        let trajectory_tensor = self.create_trajectory_tensor(&features)?;
+        let nearest_keys_tensor = self.create_nearest_keys_tensor(&features)?;
+        let actual_length_tensor = Tensor::from_array(([1], vec![features.len() as i32].to_vec()))?;
 
-        if let (Ok(trajectory_tensor),Ok(nearest_keys_tensor), Ok(actual_length_tensor)) = (trajectory_tensor, nearest_keys_tensor, actual_length_tensor) {
-            let mut ort_env = self.ort_environment.borrow_mut();
+        let mut encoder_input: HashMap<&str, DynTensor> = HashMap::new();
+        encoder_input.insert(INPUT_TRAJECTORY_FEATURES, trajectory_tensor.upcast());
+        encoder_input.insert(INPUT_NEAREST_KEYS, nearest_keys_tensor.upcast());
+        encoder_input.insert(INPUT_ACTUAL_LENGTH, actual_length_tensor.clone().upcast());
 
-            let mut encoder_input: HashMap<&str, DynTensor> = HashMap::new();
-            encoder_input.insert(INPUT_TRAJECTORY_FEATURES, trajectory_tensor.upcast());
-            encoder_input.insert(INPUT_NEAREST_KEYS, nearest_keys_tensor.upcast());
-            encoder_input.insert(INPUT_ACTUAL_LENGTH, actual_length_tensor.upcast());
+        let outputs = self.session.run(encoder_input)?;
+        let (shape, data) = outputs[0].try_extract_tensor::<f32>()?;
 
-            let outputs = ort_env.session.run(encoder_input).expect("TODO: panic message");
-            let mem = &outputs[0].try_extract_tensor::<f32>();
+        Ok(EncodeResult {
+            memory_tensor: Tensor::from_array((shape.clone(), data.to_vec()))?,
+            actual_length_tensor
+        })
+    }
+
+    pub fn create_trajectory_tensor(&self, features: &Vec<FeaturePoint>) -> ort::Result<Tensor<f32>> {
+        let mut feature_array= Vec::new();
+        for feature_point in features {
+            feature_array.push(feature_point.point.x as f32);
+            feature_array.push(feature_point.point.y as f32);
+            feature_array.push(feature_point.velocity.x as f32);
+            feature_array.push(feature_point.velocity.y as f32);
+            feature_array.push(feature_point.acceleration.x as f32);
+            feature_array.push(feature_point.acceleration.y as f32);
         }
+        for i in features.len()..self.max_sequence_length {
+            for i in 0..6 {feature_array.push(0.0)}
+        }
+        Tensor::from_array(([1, self.max_sequence_length, 6], feature_array))
+    }
+
+    pub fn create_nearest_keys_tensor(&self, features: &Vec<FeaturePoint>) -> ort::Result<Tensor<i32>> {
+        let mut feature_array = Vec::new();
+        for feature_point in features {
+            feature_array.push(QwertyKeyboardGrid::get_char_token_index(feature_point.nearest_key));
+        }
+        for i in features.len()..self.max_sequence_length {
+            feature_array.push(0);
+        }
+        Tensor::from_array(([1, self.max_sequence_length], feature_array))
     }
 }

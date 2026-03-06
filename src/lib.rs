@@ -1,8 +1,8 @@
 mod swipe_trajectory_processor;
 mod keyboard_grid;
-mod tensor_factory;
 mod encoder;
 mod swipe_orchestrator;
+mod decoder;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -11,12 +11,13 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 use ort::memory::{AllocatedBlock, Allocator};
 use ort::session::Session;
+use ort::value::Tensor;
 use vector2::Vector2;
+use crate::encoder::EncodeResult;
 
-// todo: encoder, decoder, beamsearch, wordlist
-// done: feature extracter
+// todo: beamsearch, wordlist
+// done: feature extractor, decoder, encoder
 pub struct SwipeOrchestrator {
-    ort_environment: RefCell<OrtEnvironment>
 }
 #[derive(Clone)]
 pub struct SwipePoint {
@@ -41,12 +42,15 @@ struct OrtEnvironment {
     session: Session,
     allocator: Allocator
 }
-struct TensorFactory {
+
+struct Encoder {
+    session: Session,
     max_sequence_length: usize
 }
-struct Encoder {
-    ort_environment: RefCell<OrtEnvironment>,
-    tensor_factory: TensorFactory
+struct Decoder {
+    session: Session,
+    encode_result: EncodeResult,
+    max_sequence_length: usize
 }
 
 
@@ -54,18 +58,14 @@ struct Encoder {
 mod tests {
     use super::*;
 
-    #[test]
-    fn create_orchestrator() {
-        let _swipe_orchestrator = SwipeOrchestrator::new();
-    }
 
     #[test]
     fn test_encoder() {
-        let swipe_orchestrator = SwipeOrchestrator::new();
+        let session = Session::builder().unwrap().commit_from_file("assets/swipe_encoder_android.onnx").unwrap();
         let keyboard_manager = QwertyKeyboardGrid::new();
         let encoder = Encoder {
-            ort_environment: swipe_orchestrator.ort_environment,
-            tensor_factory: TensorFactory { max_sequence_length: 250}
+            session,
+            max_sequence_length: 250
         };
         let features = vec![
             FeaturePoint{
@@ -80,7 +80,8 @@ mod tests {
                 acceleration: Default::default(),
                 nearest_key: keyboard_manager.get_nearest_key(&Vector2 { x: 0.7, y: 0.3 }),
         }];
-        encoder.encode(features);
+
+        assert!(encoder.encode(features).is_ok());
     }
 
 }
