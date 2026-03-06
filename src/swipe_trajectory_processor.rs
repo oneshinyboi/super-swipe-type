@@ -1,27 +1,29 @@
 use vector2::Vector2;
-use crate::{FeaturePoint, SwipePoint};
-
-struct SwipeTrajectoryProcessor {
-}
+use crate::{FeaturePoint, SwipePoint, SwipeTrajectoryProcessor};
+use crate::keyboard_grid::QwertyKeyboardGrid;
 
 impl SwipeTrajectoryProcessor {
-    pub fn extract_features(normalized_swipe_input: Vec<SwipePoint>, max_sequence_length: usize) -> Vec<FeaturePoint>{
-
+    pub fn new() -> Self {
+        Self {
+            keyboard_grid: QwertyKeyboardGrid::new()
+        }
+    }
+    pub fn extract_features(&self, normalized_swipe_input: Vec<SwipePoint>, max_sequence_length: usize) -> (usize, Vec<FeaturePoint>) {
         // resample input to fit max length
         let mut normalized_swipe_input = normalized_swipe_input;
         if normalized_swipe_input.len() > max_sequence_length {
             normalized_swipe_input = Self::resample_points(normalized_swipe_input, max_sequence_length);
         }
-        let mut features = Self::calculate_features(&normalized_swipe_input);
+        let mut features = self.calculate_features(&normalized_swipe_input);
+        let actual_size = features.len();
 
         // pad features to max length if needed
         for i in features.len()..max_sequence_length {
             features.push(FeaturePoint::zero())
         }
-        features
-
+        (actual_size, features)
     }
-    fn calculate_features(swipe_points: &Vec<SwipePoint>) -> Vec<FeaturePoint> {
+    fn calculate_features(&self, swipe_points: &Vec<SwipePoint>) -> Vec<FeaturePoint> {
         let n = swipe_points.len();
         let mut out = Vec::new();
         let mut dt = Vec::new();
@@ -35,6 +37,7 @@ impl SwipeTrajectoryProcessor {
             point: swipe_points[0].point.clone(),
             velocity: Vector2::ZERO,
             acceleration: Vector2::ZERO,
+            nearest_key: Some(self.keyboard_grid.get_nearest_key(&swipe_points[0].point))
         });
 
         // calculate velocities
@@ -43,6 +46,7 @@ impl SwipeTrajectoryProcessor {
                 point: window[1].point.clone(),
                 velocity: (window[1].point - swipe_points[0].point) / dt[1] as f64,
                 acceleration: Vector2::ZERO,
+                nearest_key: Some(self.keyboard_grid.get_nearest_key(&window[1].point))
             })
         }
 
