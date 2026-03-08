@@ -1,7 +1,9 @@
-use crate::{Encoder, FeaturePoint, QwertyKeyboardGrid};
 use ort::value::{DynTensor, Tensor};
 use std::collections::HashMap;
 use ort::Error;
+use ort::session::Session;
+use crate::keyboard_manager::KeyTokenizer;
+use crate::swipe_trajectory_processor::FeaturePoint;
 
 const INPUT_TRAJECTORY_FEATURES: &str = "trajectory_features";
 const INPUT_NEAREST_KEYS: &str = "nearest_keys";
@@ -9,6 +11,10 @@ const INPUT_ACTUAL_LENGTH: &str = "actual_length";
 pub(crate) struct EncodeResult {
     pub memory_tensor: Tensor<f32>,
     pub actual_length_tensor: Tensor<i32>,
+}
+pub(crate) struct Encoder {
+    pub(crate) session: Session,
+    pub(crate) max_sequence_length: usize
 }
 impl Encoder {
     // encodes swipe features and returns memory tensor of encoder
@@ -46,9 +52,9 @@ impl Encoder {
     }
 
     pub fn create_nearest_keys_tensor(&self, features: &Vec<FeaturePoint>) -> ort::Result<Tensor<i32>> {
-        let mut feature_array = Vec::new();
+        let mut feature_array: Vec<i32> = Vec::new();
         for feature_point in features {
-            feature_array.push(QwertyKeyboardGrid::get_char_token_index(feature_point.nearest_key));
+            feature_array.push(KeyTokenizer::char_to_index(feature_point.nearest_key) as i32);
         }
         feature_array.resize(self.max_sequence_length, 0);
         Tensor::from_array(([1, self.max_sequence_length], feature_array))

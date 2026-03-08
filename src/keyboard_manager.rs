@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use vector2::Vector2;
-use crate::QwertyKeyboardGrid;
 
 // use same keyboard specs as used in training models
 const KEY_WIDTH: f64 = 0.1;
@@ -12,7 +11,9 @@ const ROW_0_OFFSET: f64 = 0.0;
 const ROW_1_OFFSET: f64 = 0.05;
 const ROW_2_OFFSET: f64 = 0.15;
 
-
+pub(crate) struct QwertyKeyboardGrid {
+    key_positions: HashMap<char, Vector2>
+}
 impl QwertyKeyboardGrid {
     pub fn new() -> Self {
         Self {
@@ -59,12 +60,25 @@ impl QwertyKeyboardGrid {
         }
         closest_char
     }
-    // convert chars to token index for models
-    pub fn get_char_token_index(char: char) -> i32 {
+}
+
+pub(crate) struct KeyTokenizer {
+}
+
+impl KeyTokenizer {
+    pub fn char_to_index(char: char) -> u8 {
         if char >= 'a' && char <= 'z' {
-            char as i32 - 'a' as i32 + 4
+            char as u8 - 'a' as u8 + 4
         } else {
             0 // padding index
         }
+    }
+    pub fn index_to_char(i: u8) -> Option<char> {
+        if 4 <= i && i <= 29 {
+            Some((i - 4 + 'a' as u8) as char)
+        } else {
+            None
+        }
+
     }
 }

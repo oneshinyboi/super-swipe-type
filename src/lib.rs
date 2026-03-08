@@ -1,124 +1,52 @@
 mod swipe_trajectory_processor;
-mod keyboard_grid;
+mod keyboard_manager;
 mod encoder;
 mod swipe_orchestrator;
 mod decoder;
+mod beam_search;
+#[cfg(test)]
+mod tests;
 
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::ops::Sub;
-use std::rc::Rc;
-use std::time::{Duration, Instant};
-use ort::memory::{AllocatedBlock, Allocator};
-use ort::session::Session;
-use ort::value::Tensor;
-use vector2::Vector2;
+
+use std::cmp::Ordering;
 use crate::encoder::EncodeResult;
+use std::ops::Sub;
+use std::time::Duration;
+use vector2::Vector2;
 
-// todo: beam search, wordlist, orchestrator
-// done: feature extractor, decoder, encoder
-pub struct SwipeOrchestrator {
-}
+// todo: wordlist, orchestrator, vocab trie
+// done: feature extractor, decoder, encoder, beam search
+
+const PAD_IDX: u8 = 0;
+pub const SOS_IDX: u8 = 2;
+pub const EOS_IDX: u8 = 3;
+const DECODER_SEQ_LEN: u8 = 20; // Must match model export
 #[derive(Clone)]
 pub struct SwipePoint {
     point: Vector2,
     timestamp: Duration,
 }
-#[derive(Clone)]
-struct FeaturePoint {
-    point: Vector2,
-    velocity: Vector2,
-    acceleration: Vector2,
-    nearest_key: char,
+pub struct SwipeCandidate {
+    pub word: String,
+    pub confidence: f32,
 }
-struct QwertyKeyboardGrid {
-    key_positions: HashMap<char, Vector2>
-}
-struct SwipeTrajectoryProcessor {
-    max_sequence_length: usize,
-    keyboard_grid: QwertyKeyboardGrid
-}
-struct OrtEnvironment {
-    session: Session,
-    allocator: Allocator
-}
+impl Eq for SwipeCandidate {}
 
-struct Encoder {
-    session: Session,
-    max_sequence_length: usize
-}
-struct Decoder {
-    session: Session,
-    encode_result: EncodeResult,
-    max_sequence_length: usize
-}
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-
-    #[test]
-    fn test_encoder() {
-        let session = Session::builder().unwrap().commit_from_file("assets/swipe_encoder_android.onnx").unwrap();
-        let keyboard_manager = QwertyKeyboardGrid::new();
-        let encoder = Encoder {
-            session,
-            max_sequence_length: 250
-        };
-        let features = vec![
-            FeaturePoint{
-                point: Vector2 {x: 0.2, y: 0.4},
-                velocity: Default::default(),
-                acceleration: Default::default(),
-                nearest_key: keyboard_manager.get_nearest_key(&Vector2 { x: 0.2, y: 0.4 }),
-            },
-            FeaturePoint {
-                point: Vector2 {x: 0.7, y: 0.3},
-                velocity: Default::default(),
-                acceleration: Default::default(),
-                nearest_key: keyboard_manager.get_nearest_key(&Vector2 { x: 0.7, y: 0.3 }),
-        }];
-
-        assert!(encoder.encode(features).is_ok());
+impl PartialEq<Self> for SwipeCandidate {
+    fn eq(&self, other: &Self) -> bool {
+        self.word == other.word
     }
+}
 
-    #[test]
-    fn test_decoder() {
-        let encoder_session = Session::builder().unwrap().commit_from_file("assets/swipe_encoder_android.onnx").unwrap();
-        let decoder_session = Session::builder().unwrap().commit_from_file("assets/swipe_decoder_android.onnx").unwrap();
-        let keyboard_manager = QwertyKeyboardGrid::new();
-
-        let features = vec![
-            FeaturePoint{
-                point: Vector2 {x: 0.2, y: 0.4},
-                velocity: Default::default(),
-                acceleration: Default::default(),
-                nearest_key: keyboard_manager.get_nearest_key(&Vector2 { x: 0.2, y: 0.4 }),
-            },
-            FeaturePoint {
-                point: Vector2 {x: 0.7, y: 0.3},
-                velocity: Default::default(),
-                acceleration: Default::default(),
-                nearest_key: keyboard_manager.get_nearest_key(&Vector2 { x: 0.7, y: 0.3 }),
-            }];
-        let encoder = Encoder {
-            session: encoder_session,
-            max_sequence_length: 250
-        };
-        let result = encoder.encode(features);
-        assert!(result.is_ok());
-
-        let decoder = Decoder {
-            session: decoder_session,
-            encode_result: result.unwrap(),
-            max_sequence_length: 250,
-        };
-
-        let decode_result = decoder.decode_sequential(&vec![decoder::SOS_IDX].to_vec());
-        assert!(decode_result.is_ok());
+impl PartialOrd<Self> for SwipeCandidate {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.confidence.partial_cmp(&other.confidence)
     }
+}
 
+impl Ord for SwipeCandidate {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap_or(Ordering::Less)
+    }
 }
 

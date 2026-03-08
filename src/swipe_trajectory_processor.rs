@@ -1,6 +1,20 @@
 use vector2::Vector2;
-use crate::{FeaturePoint, QwertyKeyboardGrid, SwipePoint, SwipeTrajectoryProcessor};
+use crate::SwipePoint;
+use crate::keyboard_manager::QwertyKeyboardGrid;
 
+
+#[derive(Clone)]
+pub(crate) struct FeaturePoint {
+    pub(crate) point: Vector2,
+    pub(crate) velocity: Vector2,
+    pub(crate) acceleration: Vector2,
+    pub(crate) nearest_key: char,
+}
+pub struct SwipeTrajectoryProcessor {
+    max_sequence_length: usize,
+    keyboard_grid: QwertyKeyboardGrid
+}
+/// turns swipe points into feature points
 impl SwipeTrajectoryProcessor {
     pub fn new(max_sequence_length: usize) -> Self {
         Self {

@@ -1,22 +1,23 @@
-use std::cmp::{max, min};
-use std::collections::HashMap;
-use std::iter::repeat;
-use ort::Error;
+use crate::encoder::EncodeResult;
+use crate::{DECODER_SEQ_LEN, PAD_IDX};
+use ort::session::Session;
 use ort::value::Tensor;
-use crate::Decoder;
-const PAD_IDX: i32 = 0;
-pub const SOS_IDX: i32= 2;
-pub const EOS_IDX: i32 = 3;
-const DECODER_SEQ_LEN: usize = 20; // Must match model export
+use ort::Error;
+use std::collections::HashMap;
 
+
+pub(crate) struct Decoder {
+    pub(crate) session: Session,
+    pub(crate) encode_result: EncodeResult,
+}
 impl Decoder {
-    pub fn decode_sequential(self, tokens: &Vec<i32>) -> Result<Vec<Vec<Vec<f32>>>, Error> {
+    pub fn decode(&mut self, tokens: &Vec<i32>) -> Result<Vec<Vec<Vec<f32>>>, Error> {
         let mut target_tokens = tokens.clone();
-        target_tokens.resize(DECODER_SEQ_LEN, PAD_IDX);
+        target_tokens.resize(DECODER_SEQ_LEN.into(), PAD_IDX.into());
 
-        Ok(self.decode(1, target_tokens)?)
+        Ok(self.run_inference(1, target_tokens)?)
     }
-    pub fn decode_batched(self, batched_tokens: &Vec<Vec<i32>>) -> Result<Vec<Vec<Vec<f32>>>, Error> {
+    pub fn decode_batched(&mut self, batched_tokens: &Vec<Vec<i32>>) -> Result<Vec<Vec<Vec<f32>>>, Error> {
         let mut batched_target_tokens: Vec<i32> = Vec::new();
 
         // flatten and resize to correct sequence length
@@ -24,14 +25,14 @@ impl Decoder {
             .iter()
             .flat_map(|token| {
                 let mut new_token = token.clone();
-                new_token.resize(DECODER_SEQ_LEN, PAD_IDX);
+                new_token.resize(DECODER_SEQ_LEN.into(), PAD_IDX.into());
                 new_token
             })
         );
-        Ok(self.decode(batched_tokens.len(), batched_target_tokens)?)
+        Ok(self.run_inference(batched_tokens.len(), batched_target_tokens)?)
     }
-    fn decode(mut self, num_beams: usize, batched_target_tokens: Vec<i32>) -> Result<Vec<Vec<Vec<f32>>>, Error> {
-        let target_tokens_tensor = Tensor::from_array(([num_beams, DECODER_SEQ_LEN], batched_target_tokens))?;
+    fn run_inference(&mut self, num_beams: usize, batched_target_tokens: Vec<i32>) -> Result<Vec<Vec<Vec<f32>>>, Error> {
+        let target_tokens_tensor = Tensor::from_array(([num_beams, DECODER_SEQ_LEN.into()], batched_target_tokens))?;
 
         let mut decoder_inputs = HashMap::new();
         decoder_inputs.insert("memory", self.encode_result.memory_tensor.clone().upcast());
@@ -43,7 +44,7 @@ impl Decoder {
 
         // un-flatten data output tensor
         Ok(data
-            .chunks_exact(DECODER_SEQ_LEN * 30) // todo: explain why 30 is 30
+            .chunks_exact(DECODER_SEQ_LEN as usize * 30) // todo: explain why 30 is 30
             .map(|beam_slice| {
                 beam_slice
                     .chunks_exact(30)
