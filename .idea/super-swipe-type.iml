@@ -2,7 +2,12 @@
 <module type="EMPTY_MODULE" version="4">
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/crates/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/super-swipe-type/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/vocab-builder/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
+      <excludeFolder url="file://$MODULE_DIR$/crates/super-swipe-type/target" />
+      <excludeFolder url="file://$MODULE_DIR$/crates/target" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

@@ -1,0 +1,8 @@
+[package]
+name = "vocab-builder"
+authors.workspace = true
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fst = "0.4.7"
