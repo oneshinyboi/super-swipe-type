@@ -21,7 +21,7 @@ const PAD_IDX: u8 = 0;
 pub const SOS_IDX: u8 = 2;
 pub const EOS_IDX: u8 = 3;
 const DECODER_SEQ_LEN: u8 = 20; // Must match model export
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SwipePoint {
     point: Vector2,
     timestamp: Duration,

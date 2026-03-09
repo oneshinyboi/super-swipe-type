@@ -42,7 +42,7 @@ impl From<fst::Error> for WordListCreationError {
 }
 
 pub(crate) struct WordList {
-    set: Set<Mmap>
+    set: Set<Mmap>,
 }
 
 impl WordList {
@@ -92,8 +92,8 @@ impl WordList {
     pub fn get_word(&self, word: &str) -> Option<String> {
         let search_pattern = Self::build_pattern(word);
         let dfa = dense::Builder::new().anchored(true).build(&search_pattern).unwrap();
-        let keys = self.set.search(dfa).into_stream().into_strs().unwrap(); 
-        
+        let keys = self.set.search(dfa).into_stream().into_strs().unwrap();
+
         match keys.is_empty() {
             true => None,
             false => Some(keys.first().unwrap().clone())

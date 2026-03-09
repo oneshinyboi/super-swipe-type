@@ -1,8 +1,9 @@
 use crate::decoder::Decoder;
 use crate::keyboard_manager::KeyTokenizer;
 use crate::{SwipeCandidate, EOS_IDX, PAD_IDX, SOS_IDX};
-use ort::{log, Error};
+use ort::Error;
 use std::cmp::Ordering;
+use std::rc::Rc;
 use std::sync::OnceLock;
 use crate::wordlist::WordList;
 
@@ -22,7 +23,7 @@ impl SwipeCandidate {
 }
 pub(crate) struct BeamSearchEngine {
     decoder: Decoder,
-    word_list: WordList,
+    word_list: Rc<WordList>,
     beam_width: u32,
     branching_factor: u32,
     max_levels: u32,
@@ -42,7 +43,7 @@ impl Beam {
     fn normalized_score(&self) -> f32 {
         *self.normalized_score_cache.get_or_init(|| {
             let len = self.tokens.len() as f32;
-            self.score / ((5.0 + len) / 6.0).powf(1.2)
+            self.score / ((5.0 + len) / 6.0).powf(0.8)
         })
     }
 }
@@ -96,7 +97,7 @@ impl Ord for Beam {
 
 
 impl BeamSearchEngine {
-    pub fn new(decoder: Decoder, word_list: WordList, beam_width: u32, branching_factor: u32, max_levels: u32) -> Self {
+    pub fn new(decoder: Decoder, word_list: Rc<WordList>, beam_width: u32, branching_factor: u32, max_levels: u32) -> Self {
         Self {
             decoder,
             word_list,

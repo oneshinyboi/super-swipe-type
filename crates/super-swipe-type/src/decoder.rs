@@ -17,6 +17,13 @@ impl Decoder {
 
         Ok(self.run_inference(1, target_tokens)?)
     }
+    pub fn decode_sequentially(&mut self, batched_tokens: &Vec<Vec<i32>>) -> Result<Vec<Vec<Vec<f32>>>, Error> {
+        let mut out = Vec::new();
+        for tokens in batched_tokens {
+            out.append(self.decode(tokens)?.as_mut())
+        } 
+        Ok(out)
+    }
     pub fn decode_batched(&mut self, batched_tokens: &Vec<Vec<i32>>) -> Result<Vec<Vec<Vec<f32>>>, Error> {
         let mut batched_target_tokens: Vec<i32> = Vec::new();
 
@@ -40,7 +47,7 @@ impl Decoder {
         decoder_inputs.insert("target_tokens", target_tokens_tensor.upcast());
 
         let output = self.session.run(decoder_inputs)?;
-        let (shape, data) = output[0].try_extract_tensor::<f32>()?;
+        let (_shape, data) = output[0].try_extract_tensor::<f32>()?;
 
         // un-flatten data output tensor
         Ok(data

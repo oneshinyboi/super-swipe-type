@@ -37,7 +37,7 @@ impl QwertyKeyboardGrid {
         for (i, char) in ROW_2.chars().enumerate() {
             out.insert(char, Vector2 {
                 x: ROW_2_OFFSET + i as f64 * KEY_WIDTH,
-                y: ROW_HEIGHT * 1.0 + ROW_HEIGHT / 2.0
+                y: ROW_HEIGHT * 2.0 + ROW_HEIGHT / 2.0
             });
         }
         out

@@ -48,12 +48,12 @@ impl SwipeTrajectoryProcessor {
         });
 
         // calculate velocities
-        for window in swipe_points.windows(2) {
+        for i in 1..n {
             out.push(FeaturePoint {
-                point: window[1].point.clone(),
-                velocity: (window[1].point - swipe_points[0].point) / dt[1] as f64,
+                point: swipe_points[i].point.clone(),
+                velocity: (swipe_points[i].point - swipe_points[i-1].point) / dt[i] as f64,
                 acceleration: Vector2::ZERO,
-                nearest_key: self.keyboard_grid.get_nearest_key(&window[1].point)
+                nearest_key: self.keyboard_grid.get_nearest_key(&swipe_points[i].point)
             })
         }
 
@@ -64,36 +64,78 @@ impl SwipeTrajectoryProcessor {
         out
     }
     fn resample_points(swipe_points: Vec<SwipePoint>, target_length: usize) -> Vec<SwipePoint> {
-        let mut out = Vec::new();
+        if swipe_points.len() <= 2 {
+            return swipe_points;
+        }
 
-        let num_middle = target_length - 2;
+        let mut out = Vec::with_capacity(target_length);
+
+        // Always include the first point
+        out.push(swipe_points[0].clone());
+
+        let num_middle = target_length.saturating_sub(2);
         let original_length = swipe_points.len();
-        let available_range = original_length as f32 - 2f32;
+        let available_range = (original_length as f32 - 2.0).max(0.0);
 
-        // Use weighted selection: more points at start/end
-        // Split into 3 zones: start (30%), middle (40%), end (30%)
-        let start_zone_end = 1 + (available_range * 0.3) as usize;
-        let end_zone_start = original_length - 1 - (available_range * 0.3) as usize;
-
-        let points_in_start = num_middle*0.35 as usize;
-        let points_in_end = num_middle*0.35 as usize;
-        let points_in_middle = num_middle - points_in_start - points_in_end;
-
-        for i in 0..points_in_start {
-            let idx = 1 + (i* (start_zone_end - 1)) / points_in_start;
-            out.push(swipe_points[idx].clone());
-
+        if num_middle == 0 {
+            // If target_length is 2 or less, just add the last point
+            out.push(swipe_points[original_length - 1].clone());
+            return out;
         }
-        let middle_zone_size = end_zone_start - start_zone_end;
+
+        // Split into 3 zones: start (35%), middle (30%), end (35%)
+        let start_zone_end = 1 + (available_range * 0.35) as usize;
+        let end_zone_start = (original_length - 1).saturating_sub((available_range * 0.35) as usize);
+
+        let points_in_start = ((num_middle as f32) * 0.35) as usize;
+        let points_in_end = ((num_middle as f32) * 0.35) as usize;
+        let points_in_middle = num_middle.saturating_sub(points_in_start + points_in_end);
+
+        // Sample from start zone
         for i in 0..points_in_start {
-            let idx = start_zone_end + (i * middle_zone_size) / points_in_middle;
-            out.push(swipe_points[idx].clone());
+            let idx = if points_in_start > 1 {
+                1 + (i * (start_zone_end - 1)) / (points_in_start - 1)
+            } else {
+                1
+            };
+            if idx < swipe_points.len() {
+                out.push(swipe_points[idx].clone());
+            }
         }
-        let end_zone_size = (original_length - 1) - end_zone_start;
-        for i in 0..points_in_start {
-            let idx = end_zone_start + (i * end_zone_size) / points_in_end;
-            out.push(swipe_points[idx].clone())
+
+        // Sample from middle zone
+        let middle_zone_size = end_zone_start.saturating_sub(start_zone_end);
+        if points_in_middle > 0 && middle_zone_size > 0 {
+            for i in 0..points_in_middle {
+                let idx = if points_in_middle > 1 {
+                    start_zone_end + (i * middle_zone_size) / (points_in_middle - 1)
+                } else {
+                    start_zone_end
+                };
+                if idx < swipe_points.len() {
+                    out.push(swipe_points[idx].clone());
+                }
+            }
         }
+
+        // Sample from end zone
+        let end_zone_size = (original_length - 1).saturating_sub(end_zone_start);
+        if points_in_end > 0 && end_zone_size > 0 {
+            for i in 0..points_in_end {
+                let idx = if points_in_end > 1 {
+                    end_zone_start + (i * end_zone_size) / (points_in_end - 1)
+                } else {
+                    end_zone_start
+                };
+                if idx < swipe_points.len() {
+                    out.push(swipe_points[idx].clone());
+                }
+            }
+        }
+
+        // Always include the last point
+        out.push(swipe_points[original_length - 1].clone());
+
         out
     }
 }

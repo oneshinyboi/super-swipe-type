@@ -18,7 +18,7 @@ pub(crate) struct Encoder {
 }
 impl Encoder {
     // encodes swipe features and returns memory tensor of encoder
-    pub fn encode(mut self, features: Vec<FeaturePoint>) -> Result<EncodeResult, Error> {
+    pub fn encode(&mut self, features: Vec<FeaturePoint>) -> Result<EncodeResult, Error> {
         let trajectory_tensor = self.create_trajectory_tensor(&features)?;
         let nearest_keys_tensor = self.create_nearest_keys_tensor(&features)?;
         let actual_length_tensor = Tensor::from_array(([1], vec![features.len() as i32].to_vec()))?;
@@ -37,7 +37,7 @@ impl Encoder {
         })
     }
 
-    pub fn create_trajectory_tensor(&self, features: &Vec<FeaturePoint>) -> ort::Result<Tensor<f32>> {
+    fn create_trajectory_tensor(&self, features: &Vec<FeaturePoint>) -> ort::Result<Tensor<f32>> {
         let mut feature_array= Vec::new();
         for feature_point in features {
             feature_array.push(feature_point.point.x as f32);
@@ -51,7 +51,7 @@ impl Encoder {
         Tensor::from_array(([1, self.max_sequence_length, 6], feature_array))
     }
 
-    pub fn create_nearest_keys_tensor(&self, features: &Vec<FeaturePoint>) -> ort::Result<Tensor<i32>> {
+    fn create_nearest_keys_tensor(&self, features: &Vec<FeaturePoint>) -> ort::Result<Tensor<i32>> {
         let mut feature_array: Vec<i32> = Vec::new();
         for feature_point in features {
             feature_array.push(KeyTokenizer::char_to_index(feature_point.nearest_key) as i32);
