@@ -6,7 +6,7 @@ mod decoder;
 mod beam_search;
 #[cfg(test)]
 mod tests;
-
+mod wordlist;
 
 use std::cmp::Ordering;
 use crate::encoder::EncodeResult;
@@ -26,6 +26,7 @@ pub struct SwipePoint {
     point: Vector2,
     timestamp: Duration,
 }
+#[derive(Clone)]
 pub struct SwipeCandidate {
     pub word: String,
     pub confidence: f32,

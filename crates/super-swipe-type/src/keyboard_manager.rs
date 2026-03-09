@@ -79,6 +79,13 @@ impl KeyTokenizer {
         } else {
             None
         }
-
+    }
+    pub fn indices_to_string(indices: &Vec<u8>) -> String {
+        let mut out = String::new();
+        indices.iter()
+            .for_each(|i| out
+                .push(Self::index_to_char(*i)
+                    .unwrap_or_default()));
+        out.chars().filter(|c| *c != char::default()).collect()
     }
 }

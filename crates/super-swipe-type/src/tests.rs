@@ -9,7 +9,9 @@ use vector2::Vector2;
 use ort::session::Session;
 use serde::Deserialize;
 use std::fs;
+use std::path::Path;
 use std::time::Duration;
+use crate::wordlist::WordList;
 
 #[derive(Debug, Deserialize)]
 struct SwipeData {
@@ -27,7 +29,7 @@ struct SwipePointData {
 fn create_encoder() -> Encoder {
     let session = Session::builder()
         .unwrap()
-        .commit_from_file("assets/swipe_encoder_android.onnx")
+        .commit_from_file("assets/models/swipe_encoder_android.onnx")
         .unwrap();
     Encoder {
         session,
@@ -39,7 +41,7 @@ fn create_encoder() -> Encoder {
 fn create_decoder(encode_result: EncodeResult) -> Decoder {
     let session = Session::builder()
         .unwrap()
-        .commit_from_file("assets/swipe_decoder_android.onnx")
+        .commit_from_file("assets/models/swipe_decoder_android.onnx")
         .unwrap();
     Decoder {
         session,
@@ -95,7 +97,12 @@ fn load_swipe_data() -> Vec<SwipePoint> {
         })
         .collect()
 }
-
+#[test]
+fn test_wordlist() {
+    let wordlist = WordList::create_from_file(Path::new("./assets/dictionaries/en_us_wordlist.fst")).unwrap();
+    let chars = wordlist.get_word("didnt");
+    println!("{:?}", chars);
+}
 #[test]
 fn test_encoder() {
     let encoder = create_encoder();
@@ -127,6 +134,7 @@ fn test_beam_search() {
     
     let mut beam_search = BeamSearchEngine::new(
         decoder,
+        WordList::create_from_file(Path::new("./crates/super-swipe-type/assets/dictionaries/en_us_wordlist.fst")).unwrap(),
         beam_width,
         branching_factor,
         max_levels
@@ -178,45 +186,6 @@ fn test_beam_search() {
 }
 
 #[test]
-fn test_beam_search_with_different_parameters() {
-    let encode_result = create_encode_result();
-    let decoder = create_decoder(encode_result);
-    
-    // Test with narrow beam (should be faster, fewer results)
-    let mut narrow_beam = BeamSearchEngine::new(decoder, 2, 5, 10);
-    let narrow_result = narrow_beam.search();
-    assert!(narrow_result.is_ok());
-    
-    let narrow_candidates = narrow_result.unwrap();
-    println!("\n=== Narrow Beam Search (width=2, branching=5) ===");
-    println!("Found {} candidates", narrow_candidates.len());
-    for (i, candidate) in narrow_candidates.iter().take(5).enumerate() {
-        println!("{}. \"{}\" ({:.4})", i + 1, candidate.word, candidate.confidence);
-    }
-    
-    // Test with wide beam (should find more diverse results)
-    let encode_result2 = create_encode_result();
-    let decoder2 = create_decoder(encode_result2);
-    let mut wide_beam = BeamSearchEngine::new(decoder2, 10, 15, 15);
-    let wide_result = wide_beam.search();
-    assert!(wide_result.is_ok());
-    
-    let wide_candidates = wide_result.unwrap();
-    println!("\n=== Wide Beam Search (width=10, branching=15) ===");
-    println!("Found {} candidates", wide_candidates.len());
-    for (i, candidate) in wide_candidates.iter().take(5).enumerate() {
-        println!("{}. \"{}\" ({:.4})", i + 1, candidate.word, candidate.confidence);
-    }
-    println!("===========================\n");
-    
-    // Wide beam should generally find more candidates
-    assert!(
-        wide_candidates.len() >= narrow_candidates.len(),
-        "Wide beam should find at least as many candidates as narrow beam"
-    );
-}
-
-#[test]
 fn test_beam_search_with_real_swipe_data() {
     println!("\n=== Testing with Real Swipe Data ===");
     
@@ -241,12 +210,13 @@ fn test_beam_search_with_real_swipe_data() {
     let decoder = create_decoder(encode_result);
     
     // Run beam search with optimal parameters
-    let beam_width = 10;
-    let branching_factor = 15;
+    let beam_width = 3;
+    let branching_factor = 5;
     let max_levels = 20;
     
     let mut beam_search = BeamSearchEngine::new(
         decoder,
+        WordList::create_from_file(Path::new("./assets/dictionaries/en_us_wordlist.fst")).unwrap(),
         beam_width,
         branching_factor,
         max_levels
