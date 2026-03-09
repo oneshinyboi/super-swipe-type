@@ -88,7 +88,6 @@ impl PartialOrd<Self> for Beam {
 }
 
 impl Ord for Beam {
-    // sort in descending order
     fn cmp(&self, other: &Self) -> Ordering {
         self.partial_cmp(&other)
             .unwrap_or(Ordering::Less)
