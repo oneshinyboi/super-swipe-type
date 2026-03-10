@@ -1,14 +1,14 @@
 use crate::decoder::Decoder;
 use crate::keyboard_manager::KeyTokenizer;
 use crate::{SwipeCandidate, EOS_IDX, PAD_IDX, SOS_IDX};
-use ort::Error;
+use ort::{log, Error};
 use std::cmp::Ordering;
 use std::rc::Rc;
 use std::sync::OnceLock;
 use crate::wordlist::WordList;
 
 impl SwipeCandidate {
-    fn from_beam(beam: &Beam) -> Self {
+    fn from_beam(beam: &Beam, unigram_log_prob: f32) -> Self {
         let mut word = String::new();
         for token in &beam.tokens {
             if let Some(char) = KeyTokenizer::index_to_char(*token) {
@@ -17,7 +17,7 @@ impl SwipeCandidate {
         }
         Self {
             word,
-            confidence: beam.normalized_score().exp()
+            confidence: (beam.normalized_score() + 0.1 *unigram_log_prob).exp()
         }
     }
 }
@@ -43,7 +43,7 @@ impl Beam {
     fn normalized_score(&self) -> f32 {
         *self.normalized_score_cache.get_or_init(|| {
             let len = self.tokens.len() as f32;
-            self.score / ((5.0 + len) / 6.0).powf(0.8)
+            self.score / ((5.0 + len) / 6.0).powf(1.2)
         })
     }
 }
@@ -165,7 +165,8 @@ impl BeamSearchEngine {
                     let beam_word = &*KeyTokenizer::indices_to_string(&new_beam.tokens);
                     // if finished it should be a valid word
                     if let Some(word) = self.word_list.get_word(beam_word) {
-                        let mut candidate = SwipeCandidate::from_beam(&new_beam);
+                        let log_prob = self.word_list.get_unigram_log_probability(word.as_ref());
+                        let mut candidate = SwipeCandidate::from_beam(&new_beam, log_prob);
                         candidate.word = word;
                         self.candidates.push(candidate);
                     }

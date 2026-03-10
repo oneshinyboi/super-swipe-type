@@ -16,7 +16,7 @@ use crate::wordlist::WordList;
 
 #[derive(Debug, Deserialize)]
 struct SwipeEntry {
-    _id: u32,
+    id: u32,
     word: String,
     data: Vec<SwipePointData>,
     #[serde(default)]
@@ -81,7 +81,7 @@ fn create_encode_result() -> EncodeResult {
 }
 
 // Helper function to load all swipe entries from JSONL file
-fn load_all_swipe_entries() -> Vec<(String, Vec<SwipePoint>)> {
+fn load_swipe_entries(count: usize, mut word_list: WordList) -> Vec<(String, Vec<SwipePoint>)> {
     let file = File::open("./testing/test.jsonl")
         .expect("Failed to open swipes.jsonl");
     let reader = BufReader::new(file);
@@ -92,7 +92,7 @@ fn load_all_swipe_entries() -> Vec<(String, Vec<SwipePoint>)> {
             let entry: SwipeEntry = serde_json::from_str(&line).ok()?;
 
             // Skip potentially invalid entries if desired
-            if entry.potentially_invalid_sentence {
+            if entry.potentially_invalid_sentence || !word_list.does_word_exist(&entry.word){
                 return None;
             }
 
@@ -112,6 +112,7 @@ fn load_all_swipe_entries() -> Vec<(String, Vec<SwipePoint>)> {
 
             Some((entry.word, points))
         })
+        .take(count)
         .collect()
 }
 
@@ -262,7 +263,10 @@ fn test_all_swipe_entries() {
     println!("\n=== Testing All Swipe Entries ===");
 
     // Load all swipe entries
-    let all_entries = load_all_swipe_entries();
+
+    let wordlist = WordList::create_from_file(Path::new("./assets/dictionaries/en_us_wordlist.fst")).unwrap();
+    let entries_to_load = 500;
+    let all_entries = load_swipe_entries(entries_to_load, wordlist);
     println!("Loaded {} total swipe entries\n", all_entries.len());
 
     // Create shared resources
@@ -275,9 +279,15 @@ fn test_all_swipe_entries() {
     let mut total_processing_time = Duration::ZERO;
 
     let start_all = Instant::now();
-    let entries_to_compute: Vec<_> = all_entries.iter().take(1000).collect();
+    let entries_to_compute: Vec<_> = all_entries.iter().collect();
+    let total_entries = entries_to_compute.len();
 
-    for (expected_word, swipe_points) in entries_to_compute.iter() {
+    for (index, (expected_word, swipe_points)) in entries_to_compute.iter().enumerate() {
+        let current_entry = index + 1;
+        let percentage = (current_entry as f64 / total_entries as f64) * 100.0;
+        
+        println!("\n[{}/{}] ({:.1}%)", current_entry, total_entries, percentage);
+        
         let start = Instant::now();
         let wordlist = WordList::create_from_file(Path::new("./assets/dictionaries/en_us_wordlist.fst")).unwrap();
 
@@ -287,17 +297,35 @@ fn test_all_swipe_entries() {
                 total_processing_time += elapsed;
                 successful += 1;
                 let filtered_expected_word: String = expected_word.chars().filter(|c| *c != ',' && *c != '.' && *c != '!' && *c != '?').collect();
-                let top_word = candidates.first().map(|c| c.word.as_str()).unwrap_or("");
+
+                // Print expected word
+                println!("\nExpected: \"{}\"", filtered_expected_word);
+
+                // Print top 5 predictions
+                println!("Top 5 predictions:");
+                for (i, candidate) in candidates.iter().take(5).enumerate() {
+                    let marker = if candidate.word.eq_ignore_ascii_case(&filtered_expected_word) {
+                        "✓"
+                    } else {
+                        " "
+                    };
+                    println!("  {}{}. \"{}\" (confidence: {:.4})",
+                        marker,
+                        i + 1,
+                        candidate.word,
+                        candidate.confidence
+                    );
+                }
 
                 // Check if expected word matches (case-insensitive)
                 if !candidates.is_empty() && candidates[0].word.eq_ignore_ascii_case(&filtered_expected_word) {
                     top_match += 1;
-                    println!("✓ \"{}\" (top match, {:?})", top_word, elapsed);
+                    println!("Result: ✓ Top match ({:?})", elapsed);
                 } else if candidates.iter().take(5).any(|c| c.word.eq_ignore_ascii_case(&filtered_expected_word)) {
                     top_5_match += 1;
-                    println!("○ \"{}\" (expected \"{}\" in top 5, {:?})", top_word, filtered_expected_word, elapsed);
+                    println!("Result: ○ In top 5 ({:?})", elapsed);
                 } else {
-                    println!("✗ \"{}\" (expected \"{}\", {:?})", top_word, filtered_expected_word, elapsed);
+                    println!("Result: ✗ Not in top 5 ({:?})", elapsed);
                 }
             }
             Err(e) => {
