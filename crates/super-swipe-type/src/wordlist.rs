@@ -1,10 +1,11 @@
 use std::fs::File;
 use std::io;
 use std::path::Path;
-use fst::{IntoStreamer, Set};
+use fst::{IntoStreamer, Map};
 use memmap::Mmap;
-use regex_automata::dense;
+use regex_automata::{dense, DenseDFA};
 
+const TOTAL_UNIGRAM_COUNT: u64 = 588124220187;
 #[derive(Debug)]
 pub enum WordListCreationError {
     Io(io::Error),
@@ -42,15 +43,32 @@ impl From<fst::Error> for WordListCreationError {
 }
 
 pub(crate) struct WordList {
-    set: Set<Mmap>,
+    set: Map<Mmap>,
+    pattern_manager: PatternManager
 }
+#[derive(Default)]
+struct PatternManager {
+    word: String,
+    search_pattern: String,
+    dfa: Option<DenseDFA<Vec<usize>, usize>>
+}
+impl PatternManager {
+    pub fn optionally_create_pattern_manager(&mut self, word: &str) {
+        if word != self.word || word == "" {
+            let search_pattern = Self::build_pattern(word);
+            let dfa = dense::Builder::new().anchored(true).build(&search_pattern).unwrap();
 
-impl WordList {
-    fn build_pattern(partial_word: &str) -> String {
+            self.word = String::from(word);
+            self.search_pattern = search_pattern;
+            self.dfa = Some(dfa)
+        }
+
+    }
+    fn build_pattern(word: &str) -> String {
         // match case insensitive
         let mut pattern = String::from("(?i)");
 
-        for ch in partial_word.chars() {
+        for ch in word.chars() {
             let escaped = regex::escape(&ch.to_string());
             pattern.push_str(&escaped);
             // After each character, optionally match apostrophes
@@ -59,15 +77,20 @@ impl WordList {
 
         pattern
     }
+}
+
+impl WordList {
+
     /// gets the next lowercase letter that follows the partial_word for all possible words it could create
     /// ignores apostrophes
-    pub fn get_allowed_next_chars(&self, partial_word: &str) -> Vec<char> {
-        let mut search_pattern = Self::build_pattern(partial_word);
+    pub fn get_allowed_next_chars(&mut self, partial_word: &str) -> Vec<char> {
+        self.pattern_manager.optionally_create_pattern_manager(partial_word);
         // Match zero or more characters after
+        let mut search_pattern = self.pattern_manager.search_pattern.clone();
         search_pattern.push_str(".*");
 
         let dfa = dense::Builder::new().anchored(true).build(&search_pattern).unwrap();
-        let keys = self.set.search(dfa).into_stream().into_strs().unwrap();
+        let keys = self.set.search(dfa).into_stream().into_str_keys().unwrap();
 
         //println!("{:?}", keys);
         let mut chars: Vec<char> = keys.iter()
@@ -83,16 +106,33 @@ impl WordList {
         chars.dedup();
         chars
     }
-    pub fn is_word(&self, string: &str) -> bool {
+    pub fn get_unigram_count(&mut self, word: &str) -> u64 {
+        self.pattern_manager.optionally_create_pattern_manager(word);
+        let dfa = self.pattern_manager.dfa.as_ref().unwrap();
+
+        let vals = self.set.search(dfa).into_stream().into_values();
+
+        match vals.first() {
+            Some(n) => *n,
+            None => 0
+        }
+    }
+    pub fn get_unigram_probability(&mut self, word: &str) -> f64 {
+        let count = self.get_unigram_count(word);
+        count as f64 / TOTAL_UNIGRAM_COUNT as f64
+    }
+
+    pub fn does_word_exist(&mut self, string: &str) -> bool {
         match self.get_word(string) {
             None => false,
             Some(_) => true
         }
     }
-    pub fn get_word(&self, word: &str) -> Option<String> {
-        let search_pattern = Self::build_pattern(word);
-        let dfa = dense::Builder::new().anchored(true).build(&search_pattern).unwrap();
-        let keys = self.set.search(dfa).into_stream().into_strs().unwrap();
+    pub fn get_word(&mut self, word: &str) -> Option<String> {
+        self.pattern_manager.optionally_create_pattern_manager(word);
+        let dfa = self.pattern_manager.dfa.as_ref().unwrap();
+
+        let keys = self.set.search(dfa).into_stream().into_str_keys().unwrap();
 
         match keys.is_empty() {
             true => None,
@@ -101,9 +141,10 @@ impl WordList {
     }
     pub fn create_from_file(fst_file: &Path) -> Result<Self, WordListCreationError> {
         let mmap = unsafe { Mmap::map(&File::open(fst_file)?)? };
-        let set = Set::new(mmap)?;
+        let set = Map::new(mmap)?;
         Ok(Self {
-            set
+            set,
+            pattern_manager: PatternManager::default()
         })
     }
 }

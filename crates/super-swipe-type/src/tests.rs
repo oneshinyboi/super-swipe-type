@@ -11,13 +11,12 @@ use serde::Deserialize;
 use std::fs::File;
 use std::io::{stdout, BufRead, BufReader, Write};
 use std::path::Path;
-use std::rc::Rc;
 use std::time::{Duration, Instant};
 use crate::wordlist::WordList;
 
 #[derive(Debug, Deserialize)]
 struct SwipeEntry {
-    id: u32,
+    _id: u32,
     word: String,
     data: Vec<SwipePointData>,
     #[serde(default)]
@@ -120,7 +119,7 @@ fn load_all_swipe_entries() -> Vec<(String, Vec<SwipePoint>)> {
 fn process_swipe_entry(
     swipe_points: Vec<SwipePoint>,
     encoder: &mut Encoder,
-    wordlist: Rc<WordList>,
+    wordlist: WordList,
 ) -> Result<Vec<SwipeCandidate>, String> {
     // Create trajectory processor
     let processor = SwipeTrajectoryProcessor::new(250);
@@ -154,9 +153,24 @@ fn process_swipe_entry(
 
 #[test]
 fn test_wordlist() {
-    let wordlist = WordList::create_from_file(Path::new("./assets/dictionaries/en_us_wordlist.fst")).unwrap();
-    let chars = wordlist.get_word("didnt");
-    println!("{:?}", chars);
+    let mut wordlist = WordList::create_from_file(Path::new("./assets/dictionaries/en_us_wordlist.fst")).unwrap();
+
+    let start = Instant::now();
+
+    let word = "co";
+    let chars = wordlist.get_allowed_next_chars(word);
+    println!("valid next chars for {word}: {:?}", chars);
+
+    let count = wordlist.get_unigram_count(word);
+    println!("unigram count for {word}: {count}");
+
+    let probability = wordlist.get_unigram_probability(word);
+
+    println!("unigram probability of {word} occurring: {probability}");
+
+    let elapsed = start.elapsed();
+    println!("operations took {elapsed:?}")
+
 }
 
 #[test]
@@ -190,7 +204,7 @@ fn test_beam_search() {
     
     let mut beam_search = BeamSearchEngine::new(
         decoder,
-        Rc::from(WordList::create_from_file(Path::new("./crates/super-swipe-type/assets/dictionaries/en_us_wordlist.fst")).unwrap()),
+        WordList::create_from_file(Path::new("./crates/super-swipe-type/assets/dictionaries/en_us_wordlist.fst")).unwrap(),
         beam_width,
         branching_factor,
         max_levels
@@ -253,8 +267,6 @@ fn test_all_swipe_entries() {
 
     // Create shared resources
     let mut encoder = create_encoder();
-    let wordlist = Rc::from(WordList::create_from_file(Path::new("./assets/dictionaries/en_us_wordlist.fst"))
-        .expect("Failed to load wordlist"));
 
     let mut successful = 0;
     let mut failed = 0;
@@ -266,9 +278,10 @@ fn test_all_swipe_entries() {
     let entries_to_compute: Vec<_> = all_entries.iter().take(1000).collect();
 
     for (expected_word, swipe_points) in entries_to_compute.iter() {
-
         let start = Instant::now();
-        match process_swipe_entry(swipe_points.clone(), &mut encoder, wordlist.clone()) {
+        let wordlist = WordList::create_from_file(Path::new("./assets/dictionaries/en_us_wordlist.fst")).unwrap();
+
+        match process_swipe_entry(swipe_points.clone(), &mut encoder, wordlist) {
             Ok(candidates) => {
                 let elapsed = start.elapsed();
                 total_processing_time += elapsed;

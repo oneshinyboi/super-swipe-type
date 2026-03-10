@@ -23,7 +23,7 @@ impl SwipeCandidate {
 }
 pub(crate) struct BeamSearchEngine {
     decoder: Decoder,
-    word_list: Rc<WordList>,
+    word_list: WordList,
     beam_width: u32,
     branching_factor: u32,
     max_levels: u32,
@@ -96,7 +96,7 @@ impl Ord for Beam {
 
 
 impl BeamSearchEngine {
-    pub fn new(decoder: Decoder, word_list: Rc<WordList>, beam_width: u32, branching_factor: u32, max_levels: u32) -> Self {
+    pub fn new(decoder: Decoder, word_list: WordList, beam_width: u32, branching_factor: u32, max_levels: u32) -> Self {
         Self {
             decoder,
             word_list,
@@ -179,7 +179,7 @@ impl BeamSearchEngine {
         Ok(())
     }
     /// Return top TokenProbs for given branch and logits
-    fn process_logits(&self, beam: &Beam, logits: &mut Vec<f32>) -> Vec<TokenProb> {
+    fn process_logits(&mut self, beam: &Beam, logits: &mut Vec<f32>) -> Vec<TokenProb> {
         self.apply_masking(beam, logits);
 
         let log_probs: Vec<f32> = self.log_soft_max(logits);
@@ -217,11 +217,11 @@ impl BeamSearchEngine {
         log_probs
     }
 
-    fn apply_masking(&self, beam: &Beam, logits: &mut Vec<f32>) {
+    fn apply_masking(&mut self, beam: &Beam, logits: &mut Vec<f32>) {
         let partial_word = KeyTokenizer::indices_to_string(&beam.tokens);
 
         let allowed_next_chars = self.word_list.get_allowed_next_chars(&partial_word);
-        let is_word = self.word_list.is_word(&partial_word);
+        let is_word = self.word_list.does_word_exist(&partial_word);
 
 
         for i in 0..logits.len() as u8 {
