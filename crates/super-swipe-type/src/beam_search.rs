@@ -1,14 +1,13 @@
 use crate::decoder::Decoder;
+use crate::dictionary::Dictionary;
 use crate::keyboard_manager::KeyTokenizer;
 use crate::{SwipeCandidate, EOS_IDX, PAD_IDX, SOS_IDX};
-use ort::{log, Error};
+use ort::Error;
 use std::cmp::Ordering;
-use std::rc::Rc;
 use std::sync::OnceLock;
-use crate::wordlist::WordList;
 
 impl SwipeCandidate {
-    fn from_beam(beam: &Beam, unigram_log_prob: f32) -> Self {
+    fn from_beam(beam: &Beam, unigram_log_prob: f32, bigram_log_prob: f32) -> Self {
         let mut word = String::new();
         for token in &beam.tokens {
             if let Some(char) = KeyTokenizer::index_to_char(*token) {
@@ -17,13 +16,13 @@ impl SwipeCandidate {
         }
         Self {
             word,
-            confidence: (beam.normalized_score() + 0.1 *unigram_log_prob).exp()
+            confidence: (beam.normalized_score() + 0.3 * unigram_log_prob + 0.3 * bigram_log_prob).exp()
         }
     }
 }
 pub(crate) struct BeamSearchEngine {
     decoder: Decoder,
-    word_list: WordList,
+    dictionary: Dictionary,
     beam_width: u32,
     branching_factor: u32,
     max_levels: u32,
@@ -96,10 +95,10 @@ impl Ord for Beam {
 
 
 impl BeamSearchEngine {
-    pub fn new(decoder: Decoder, word_list: WordList, beam_width: u32, branching_factor: u32, max_levels: u32) -> Self {
+    pub fn new(decoder: Decoder, word_list: Dictionary, beam_width: u32, branching_factor: u32, max_levels: u32) -> Self {
         Self {
             decoder,
-            word_list,
+            dictionary: word_list,
             beam_width,
             branching_factor,
             max_levels,
@@ -108,7 +107,7 @@ impl BeamSearchEngine {
             candidates: Vec::new(),
         }
     }
-    pub fn search(&mut self) -> Result<Vec<SwipeCandidate>, Error> {
+    pub fn search(&mut self, prev_word: Option<String>) -> Result<Vec<SwipeCandidate>, Error> {
         let mut level = 0;
 
         // initialize beams
@@ -123,7 +122,7 @@ impl BeamSearchEngine {
             // sort in descending order to put high scorers first
             self.active_beams.sort();
             self.active_beams.reverse();
-            self.expand_beams()?;
+            self.expand_beams(&prev_word)?;
 
             level += 1;
         }
@@ -134,7 +133,7 @@ impl BeamSearchEngine {
     }
     /// selects the top branching_factor continuation beams for each beam in beams
     /// and adds them to active_beams or finished_beams
-    fn expand_beams(&mut self) -> Result<(), Error> {
+    fn expand_beams(&mut self, prev_word: &Option<String>) -> Result<(), Error> {
 
         let beam_width = self.beam_width as usize;
         let beams_to_expand: Vec<Beam> = self.active_beams
@@ -164,9 +163,15 @@ impl BeamSearchEngine {
 
                     let beam_word = &*KeyTokenizer::indices_to_string(&new_beam.tokens);
                     // if finished it should be a valid word
-                    if let Some(word) = self.word_list.get_word(beam_word) {
-                        let log_prob = self.word_list.get_unigram_log_probability(word.as_ref());
-                        let mut candidate = SwipeCandidate::from_beam(&new_beam, log_prob);
+                    if let Some(word) = self.dictionary.get_word(beam_word) {
+                        let log_prob = self.dictionary.get_unigram_log_probability(&word);
+
+                        let mut bigram_prob = 0.0;
+                        if let Some(prev_word) = &prev_word {
+                            bigram_prob = self.dictionary.get_bigram_log_prob(prev_word, &word);
+                        }
+
+                        let mut candidate = SwipeCandidate::from_beam(&new_beam, log_prob, bigram_prob);
                         candidate.word = word;
                         self.candidates.push(candidate);
                     }
@@ -221,8 +226,8 @@ impl BeamSearchEngine {
     fn apply_masking(&mut self, beam: &Beam, logits: &mut Vec<f32>) {
         let partial_word = KeyTokenizer::indices_to_string(&beam.tokens);
 
-        let allowed_next_chars = self.word_list.get_allowed_next_chars(&partial_word);
-        let is_word = self.word_list.does_word_exist(&partial_word);
+        let allowed_next_chars = self.dictionary.get_allowed_next_chars(&partial_word);
+        let is_word = self.dictionary.does_word_exist(&partial_word);
 
 
         for i in 0..logits.len() as u8 {

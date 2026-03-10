@@ -6,7 +6,7 @@ mod decoder;
 mod beam_search;
 #[cfg(test)]
 mod tests;
-mod wordlist;
+mod dictionary;
 
 use std::cmp::Ordering;
 use crate::encoder::EncodeResult;

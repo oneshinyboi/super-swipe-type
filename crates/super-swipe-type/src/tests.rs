@@ -12,13 +12,18 @@ use std::fs::File;
 use std::io::{stdout, BufRead, BufReader, Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
-use crate::wordlist::WordList;
+use crate::dictionary::Dictionary;
+use rayon::prelude::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
 struct SwipeEntry {
     id: u32,
     word: String,
     data: Vec<SwipePointData>,
+    sentence: String,
+    word_idx: u32,
     #[serde(default)]
     potentially_invalid_sentence: bool,
 }
@@ -28,6 +33,26 @@ struct SwipePointData {
     t: u64,
     x: f64,
     y: f64,
+}
+
+// Statistics structure for aggregating results
+#[derive(Debug, Default)]
+struct TestStatistics {
+    successful: usize,
+    failed: usize,
+    top_match: usize,
+    top_5_match: usize,
+    total_processing_time: Duration,
+}
+
+impl TestStatistics {
+    fn merge(&mut self, other: TestStatistics) {
+        self.successful += other.successful;
+        self.failed += other.failed;
+        self.top_match += other.top_match;
+        self.top_5_match += other.top_5_match;
+        self.total_processing_time += other.total_processing_time;
+    }
 }
 
 // Helper function to create encoder
@@ -81,7 +106,7 @@ fn create_encode_result() -> EncodeResult {
 }
 
 // Helper function to load all swipe entries from JSONL file
-fn load_swipe_entries(count: usize, mut word_list: WordList) -> Vec<(String, Vec<SwipePoint>)> {
+fn load_swipe_entries(count: usize, mut word_list: Dictionary) -> Vec<(String, Option<String>, Vec<SwipePoint>)> {
     let file = File::open("./testing/test.jsonl")
         .expect("Failed to open swipes.jsonl");
     let reader = BufReader::new(file);
@@ -110,7 +135,15 @@ fn load_swipe_entries(count: usize, mut word_list: WordList) -> Vec<(String, Vec
                 })
                 .collect();
 
-            Some((entry.word, points))
+            let mut prev_word = None;
+            if entry.word_idx != 0 {
+                if let Some(word) = entry.sentence.split_whitespace().nth(entry.word_idx as usize - 1) {
+                    prev_word = Some(word.into());
+                }
+            }
+
+
+            Some((entry.word, prev_word, points))
         })
         .take(count)
         .collect()
@@ -120,7 +153,8 @@ fn load_swipe_entries(count: usize, mut word_list: WordList) -> Vec<(String, Vec
 fn process_swipe_entry(
     swipe_points: Vec<SwipePoint>,
     encoder: &mut Encoder,
-    wordlist: WordList,
+    wordlist: Dictionary,
+    prev_word: Option<String>
 ) -> Result<Vec<SwipeCandidate>, String> {
     // Create trajectory processor
     let processor = SwipeTrajectoryProcessor::new(250);
@@ -148,31 +182,88 @@ fn process_swipe_entry(
         max_levels
     );
 
-    beam_search.search()
+    beam_search.search(prev_word)
         .map_err(|e| format!("Beam search failed: {:?}", e))
 }
 
+// Process a chunk of entries (runs in parallel)
+fn process_chunk(
+    chunk: &[(String, Option<String>, Vec<SwipePoint>)],
+    chunk_id: usize,
+    progress_counter: Arc<AtomicUsize>,
+    total_entries: usize,
+) -> TestStatistics {
+    let mut stats = TestStatistics::default();
+    let mut encoder = create_encoder();
+
+    for (expected_word, prev_word, swipe_points) in chunk {
+        let current = progress_counter.fetch_add(1, Ordering::Relaxed) + 1;
+        let percentage = (current as f64 / total_entries as f64) * 100.0;
+
+        print!("\r[{}/{}] ({:.1}%) Processing...", current, total_entries, percentage);
+        stdout().flush().unwrap();
+
+        let start = Instant::now();
+        let wordlist = get_dictionary();
+
+        match process_swipe_entry(swipe_points.clone(), &mut encoder, wordlist, prev_word.clone()) {
+            Ok(candidates) => {
+                let elapsed = start.elapsed();
+                stats.total_processing_time += elapsed;
+                stats.successful += 1;
+
+                let filtered_expected_word: String = expected_word
+                    .chars()
+                    .filter(|c| *c != ',' && *c != '.' && *c != '!' && *c != '?')
+                    .collect();
+
+                // Check if expected word matches (case-insensitive)
+                if !candidates.is_empty() && candidates[0].word.eq_ignore_ascii_case(&filtered_expected_word) {
+                    stats.top_match += 1;
+                } else if candidates.iter().take(5).any(|c| c.word.eq_ignore_ascii_case(&filtered_expected_word)) {
+                    stats.top_5_match += 1;
+                }
+            }
+            Err(_) => {
+                stats.failed += 1;
+            }
+        }
+    }
+
+    stats
+}
+fn get_dictionary() -> Dictionary {
+    let unigrams_path = Path::new("./assets/dictionaries/en_us_wordlist.fst");
+    let bigrams_path = Path::new("./assets/dictionaries/en_us_bigrams.fst");
+    
+    Dictionary::create_from_file(unigrams_path, bigrams_path).unwrap()
+    
+}
 #[test]
-fn test_wordlist() {
-    let mut wordlist = WordList::create_from_file(Path::new("./assets/dictionaries/en_us_wordlist.fst")).unwrap();
+fn test_dictionary() {
+    let mut dictionary = get_dictionary();
 
     let start = Instant::now();
 
     let word = "promiscuous";
-    let chars = wordlist.get_allowed_next_chars(word);
+    let chars = dictionary.get_allowed_next_chars(word);
     println!("valid next chars for {word}: {:?}", chars);
 
-    let count = wordlist.get_unigram_count(word);
+    let count = dictionary.get_unigram_count(word);
     println!("unigram count for {word}: {count}");
 
-    let probability = wordlist.get_unigram_log_probability(word);
+    let probability = dictionary.get_unigram_log_probability(word);
 
     println!("unigram probability of {word} occurring: {probability}");
 
     let elapsed = start.elapsed();
-    println!("operations took {elapsed:?}")
+    println!("operations took {elapsed:?}");
+
+    let bigram_prob = dictionary.get_bigram_log_prob("maybe", "that");
+    println!("{bigram_prob}");
 
 }
+
 
 #[test]
 fn test_encoder() {
@@ -205,14 +296,14 @@ fn test_beam_search() {
     
     let mut beam_search = BeamSearchEngine::new(
         decoder,
-        WordList::create_from_file(Path::new("./crates/super-swipe-type/assets/dictionaries/en_us_wordlist.fst")).unwrap(),
+        get_dictionary(),
         beam_width,
         branching_factor,
         max_levels
     );
     
     // Perform beam search
-    let result = beam_search.search();
+    let result = beam_search.search(None);
     assert!(result.is_ok(), "Beam search should complete successfully");
     
     let candidates = result.unwrap();
@@ -260,11 +351,83 @@ fn test_beam_search() {
 
 #[test]
 fn test_all_swipe_entries() {
+    println!("\n=== Testing All Swipe Entries (Parallel) ===");
+
+    // Load all swipe entries
+    let wordlist = get_dictionary();
+    let entries_to_load = 1000;
+    let all_entries = load_swipe_entries(entries_to_load, wordlist);
+    let total_entries = all_entries.len();
+
+    println!("Loaded {} total swipe entries", total_entries);
+
+    // Determine number of threads (use all available cores)
+    let num_threads = rayon::current_num_threads();
+    println!("Using {} threads for parallel processing\n", num_threads);
+
+    let start_all = Instant::now();
+
+    // Create atomic counter for progress tracking
+    let progress_counter = Arc::new(AtomicUsize::new(0));
+
+    // Split entries into chunks and process in parallel
+    let chunk_size = (total_entries + num_threads - 1) / num_threads;
+    let final_stats: TestStatistics = all_entries
+        .par_chunks(chunk_size)
+        .enumerate()
+        .map(|(chunk_id, chunk)| {
+            process_chunk(chunk, chunk_id, Arc::clone(&progress_counter), total_entries)
+        })
+        .reduce(
+            || TestStatistics::default(),
+            |mut acc, stats| {
+                acc.merge(stats);
+                acc
+            }
+        );
+
+    let total_elapsed = start_all.elapsed();
+
+    println!("\n\n=== All Entries Summary ===");
+    println!("Total entries: {}", total_entries);
+    println!("Successful: {}", final_stats.successful);
+    println!("Failed: {}", final_stats.failed);
+    println!("Success rate: {:.1}%",
+        (final_stats.successful as f64 / total_entries as f64) * 100.0);
+
+    if final_stats.successful > 0 {
+        println!("\nPerformance:");
+        println!("  Total time: {:?}", total_elapsed);
+        println!("  Average processing time: {:?}",
+            final_stats.total_processing_time / final_stats.successful as u32);
+        println!("  Throughput: {:.1} entries/sec",
+            total_entries as f64 / total_elapsed.as_secs_f64());
+    }
+
+    println!("\nAccuracy:");
+    println!("  Top match: {}/{} ({:.1}%)",
+        final_stats.top_match,
+        total_entries,
+        (final_stats.top_match as f64 / total_entries as f64) * 100.0
+    );
+    println!("  Top-5: {}/{} ({:.1}%)",
+        final_stats.top_match + final_stats.top_5_match,
+        total_entries,
+        ((final_stats.top_match + final_stats.top_5_match) as f64 / total_entries as f64) * 100.0
+    );
+
+    println!("===========================\n");
+
+    assert!(final_stats.successful > 0, "At least one entry should process successfully");
+}
+
+#[test]
+fn test_all_swipe_entries_single_threaded() {
     println!("\n=== Testing All Swipe Entries ===");
 
     // Load all swipe entries
 
-    let wordlist = WordList::create_from_file(Path::new("./assets/dictionaries/en_us_wordlist.fst")).unwrap();
+    let wordlist = get_dictionary();
     let entries_to_load = 500;
     let all_entries = load_swipe_entries(entries_to_load, wordlist);
     println!("Loaded {} total swipe entries\n", all_entries.len());
@@ -282,16 +445,16 @@ fn test_all_swipe_entries() {
     let entries_to_compute: Vec<_> = all_entries.iter().collect();
     let total_entries = entries_to_compute.len();
 
-    for (index, (expected_word, swipe_points)) in entries_to_compute.iter().enumerate() {
+    for (index, (expected_word, prev_word, swipe_points)) in entries_to_compute.iter().enumerate() {
         let current_entry = index + 1;
         let percentage = (current_entry as f64 / total_entries as f64) * 100.0;
-        
-        println!("\n[{}/{}] ({:.1}%)", current_entry, total_entries, percentage);
-        
-        let start = Instant::now();
-        let wordlist = WordList::create_from_file(Path::new("./assets/dictionaries/en_us_wordlist.fst")).unwrap();
 
-        match process_swipe_entry(swipe_points.clone(), &mut encoder, wordlist) {
+        println!("\n[{}/{}] ({:.1}%)", current_entry, total_entries, percentage);
+
+        let start = Instant::now();
+        let wordlist = get_dictionary();
+
+        match process_swipe_entry(swipe_points.clone(), &mut encoder, wordlist, prev_word.clone()) {
             Ok(candidates) => {
                 let elapsed = start.elapsed();
                 total_processing_time += elapsed;
@@ -310,10 +473,10 @@ fn test_all_swipe_entries() {
                         " "
                     };
                     println!("  {}{}. \"{}\" (confidence: {:.4})",
-                        marker,
-                        i + 1,
-                        candidate.word,
-                        candidate.confidence
+                             marker,
+                             i + 1,
+                             candidate.word,
+                             candidate.confidence
                     );
                 }
 
@@ -352,14 +515,14 @@ fn test_all_swipe_entries() {
 
     println!("\nAccuracy:");
     println!("  Top match: {}/{} ({:.1}%)",
-        top_match,
-        entries_to_compute.len(),
-        (top_match as f64 / entries_to_compute.len() as f64) * 100.0
+             top_match,
+             entries_to_compute.len(),
+             (top_match as f64 / entries_to_compute.len() as f64) * 100.0
     );
     println!("  Top-5: {}/{} ({:.1}%)",
-        top_match + top_5_match,
-        entries_to_compute.len(),
-        ((top_match + top_5_match) as f64 / entries_to_compute.len() as f64) * 100.0
+             top_match + top_5_match,
+             entries_to_compute.len(),
+             ((top_match + top_5_match) as f64 / entries_to_compute.len() as f64) * 100.0
     );
 
     println!("===========================\n");
