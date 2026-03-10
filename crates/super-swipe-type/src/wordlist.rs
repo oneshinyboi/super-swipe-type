@@ -117,9 +117,9 @@ impl WordList {
             None => 0
         }
     }
-    pub fn get_unigram_probability(&mut self, word: &str) -> f64 {
+    pub fn get_unigram_log_probability(&mut self, word: &str) -> f64 {
         let count = self.get_unigram_count(word);
-        count as f64 / TOTAL_UNIGRAM_COUNT as f64
+        (count as f64 / TOTAL_UNIGRAM_COUNT as f64).ln()
     }
 
     pub fn does_word_exist(&mut self, string: &str) -> bool {

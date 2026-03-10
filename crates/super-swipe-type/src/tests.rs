@@ -157,14 +157,14 @@ fn test_wordlist() {
 
     let start = Instant::now();
 
-    let word = "co";
+    let word = "promiscuous";
     let chars = wordlist.get_allowed_next_chars(word);
     println!("valid next chars for {word}: {:?}", chars);
 
     let count = wordlist.get_unigram_count(word);
     println!("unigram count for {word}: {count}");
 
-    let probability = wordlist.get_unigram_probability(word);
+    let probability = wordlist.get_unigram_log_probability(word);
 
     println!("unigram probability of {word} occurring: {probability}");
 
