@@ -9,7 +9,6 @@ mod tests;
 mod dictionary;
 
 use std::cmp::Ordering;
-use std::ops::Sub;
 use std::time::Duration;
 use vector2::Vector2;
 

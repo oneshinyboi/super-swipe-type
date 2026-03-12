@@ -93,8 +93,8 @@ fn load_swipe_entries(count: usize, mut word_list: Dictionary) -> Vec<(String, O
 }
 
 fn get_dictionary() -> Dictionary {
-    let unigrams_path = Path::new("./assets/dictionaries/en_us_wordlist.fst");
-    let bigrams_path = Path::new("./assets/dictionaries/en_us_bigrams.fst");
+    let unigrams_path = Path::new("./assets/dictionaries/en_wordlist.fst");
+    let bigrams_path = Path::new("./assets/dictionaries/en_bigrams.fst");
 
     Dictionary::create_from_file(unigrams_path, bigrams_path).unwrap()
 }

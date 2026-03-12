@@ -3,6 +3,15 @@ name = "super-swipe-type"
 authors.workspace = true
 version.workspace = true
 edition.workspace = true
+readme.workspace = true
+license.workspace = true
+description = "A fast swipe typing prediction engine using ML"
+repository = "https://github.com/oneshinyboi/super-swipe-type"
+homepage = "https://github.com/oneshinyboi/super-swipe-type"
+keywords = ["swipe", "typing", "prediction", "keyboard"]
+categories = ["algorithms", "text-processing"]
+exclude = ["**/testing", "**/assets"]
+
 
 [dependencies]
 fst = "0.4.7"
@@ -12,6 +21,7 @@ regex-automata = { version = "0.1.9", features = ["transducer"] }
 vector2 = "0.1.5"
 regex = "1.12.3"
 anyhow = "1.0.102"
+cached-path = "0.10.1"
 
 [dev-dependencies]
 serde_json = "1.0.149"

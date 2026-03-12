@@ -67,9 +67,9 @@ fn create_unigram_hashmap(unigram_path: &Path) -> HashMap<String, u64> {
 }
 fn build_unigram_fst_map(out_path: &Path, input_path: &Path, unigram_hash_map: HashMap<String, u64>) -> Result<(), Error>{
     let mut builder = MapBuilder::new(
-        BufWriter::new(File::create(out_path.join("en_us_wordlist.fst"))?)
+        BufWriter::new(File::create(out_path.join("en_wordlist.fst"))?)
     )?;
-    let wordlist_file = File::open(input_path.join("en_us_wordlist"))?;
+    let wordlist_file = File::open(input_path.join("en_wordlist"))?;
     let wordlist = BufReader::new(wordlist_file);
 
     let mut lines = wordlist.lines();
@@ -88,9 +88,9 @@ fn build_unigram_fst_map(out_path: &Path, input_path: &Path, unigram_hash_map: H
 fn build_bigram_fst_map(out_path: &Path, input_path: &Path, bigram_hash_map: HashMap<String, HashMap<String, f32>>)-> Result<(), Error> {
     // get wordlist words
     let mut builder = MapBuilder::new(
-        BufWriter::new(File::create(out_path.join("en_us_bigrams.fst"))?)
+        BufWriter::new(File::create(out_path.join("en_bigrams.fst"))?)
     )?;
-    let wordlist_file = File::open(input_path.join("en_us_wordlist"))?;
+    let wordlist_file = File::open(input_path.join("en_wordlist"))?;
     let wordlist = BufReader::new(wordlist_file);
 
     let mut lines = wordlist.lines();

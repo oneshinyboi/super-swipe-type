@@ -1,3 +1,5 @@
+use std::fs;
+use std::fs::File;
 use ort::session::Session;
 use crate::beam_search::BeamSearchEngine;
 use crate::decoder::Decoder;
@@ -6,7 +8,9 @@ use crate::encoder::Encoder;
 use crate::{SwipeCandidate, SwipePoint};
 use crate::swipe_trajectory_processor::SwipeTrajectoryProcessor;
 use anyhow::Result;
+use cached_path::cached_path;
 
+const ASSET_COMPAT_VER: &str = "v0.1.2";
 const MAX_SEQUENCE_LENGTH: usize = 250; // max length of swipe points that can be processed by the model at once
 #[derive(Debug)]
 pub struct SwipeOrchestrator {
@@ -18,14 +22,18 @@ pub struct SwipeOrchestrator {
 }
 impl SwipeOrchestrator {
     pub fn new() -> Result<Self> {
-        let unigram_fst_bytes = include_bytes!("./../assets/dictionaries/en_us_wordlist.fst");
-        let bigram_fst_bytes = include_bytes!("./../assets/dictionaries/en_us_bigrams.fst");
+        let base_url = format!("https://github.com/oneshinyboi/super-swipe-type/raw/refs/tags/{}", ASSET_COMPAT_VER);
 
-        let encoder_bytes = include_bytes!("./../assets/models/swipe_encoder_android.onnx");
-        let decoder_bytes = include_bytes!("./../assets/models/swipe_decoder_android.onnx");
+        let unigram_path = cached_path(&format!("{}/crates/super-swipe-type/assets/dictionaries/en_wordlist.fst", base_url))?;
+        let bigram_path = cached_path(&format!("{}/crates/super-swipe-type/assets/dictionaries/en_bigrams.fst", base_url))?;
+        let encoder_path = cached_path(&format!("{}/crates/super-swipe-type/assets/models/swipe_encoder_android.onnx", base_url))?;
+        let decoder_path = cached_path(&format!("{}/crates/super-swipe-type/assets/models/swipe_decoder_android.onnx", base_url))?;
 
-        let encoder_session = Session::builder()?.commit_from_memory(encoder_bytes)?;
-        let decoder_session = Session::builder()?.commit_from_memory(decoder_bytes)?;
+        let encoder_bytes = fs::read(encoder_path)?;
+        let decoder_bytes = fs::read(decoder_path)?;
+
+        let encoder_session = Session::builder()?.commit_from_memory(&*encoder_bytes)?;
+        let decoder_session = Session::builder()?.commit_from_memory(&*decoder_bytes)?;
 
         let encoder = Encoder {
             session: encoder_session,
@@ -36,7 +44,8 @@ impl SwipeOrchestrator {
             encode_result: None
         };
 
-        let dictionary = Dictionary::create_from_byte_array(unigram_fst_bytes, bigram_fst_bytes)?;
+        let dictionary = Dictionary::create_from_file(&unigram_path,  &bigram_path)?;
+
         Ok(Self {
             swipe_trajectory_processor: SwipeTrajectoryProcessor::new(MAX_SEQUENCE_LENGTH),
             encoder,
