@@ -2,9 +2,9 @@ use crate::decoder::Decoder;
 use crate::dictionary::Dictionary;
 use crate::keyboard_manager::KeyTokenizer;
 use crate::{SwipeCandidate, EOS_IDX, PAD_IDX, SOS_IDX};
-use ort::Error;
 use std::cmp::Ordering;
 use std::sync::OnceLock;
+use anyhow::Result;
 
 impl SwipeCandidate {
     fn from_beam(beam: &Beam, unigram_log_prob: f32, bigram_log_prob: f32) -> Self {
@@ -20,8 +20,8 @@ impl SwipeCandidate {
         }
     }
 }
+#[derive(Debug)]
 pub(crate) struct BeamSearchEngine {
-    decoder: Decoder,
     dictionary: Dictionary,
     beam_width: u32,
     branching_factor: u32,
@@ -95,22 +95,24 @@ impl Ord for Beam {
 
 
 impl BeamSearchEngine {
-    pub fn new(decoder: Decoder, word_list: Dictionary, beam_width: u32, branching_factor: u32, max_levels: u32) -> Self {
+    pub fn new(dictionary: Dictionary, beam_width: u32, branching_factor: u32, max_levels: u32, temperature: f32) -> Self {
         Self {
-            decoder,
-            dictionary: word_list,
+            dictionary,
             beam_width,
             branching_factor,
             max_levels,
-            temperature: 1.0,
+            temperature,
             active_beams: Vec::new(),
             candidates: Vec::new(),
         }
     }
-    pub fn search(&mut self, prev_word: Option<String>) -> Result<Vec<SwipeCandidate>, Error> {
+    pub fn search(&mut self, prev_word: &Option<String>, decoder: &mut Decoder) -> Result<Vec<SwipeCandidate>> {
         let mut level = 0;
 
         // initialize beams
+        self.active_beams = Vec::new();
+        self.candidates = Vec::new();
+        
         self.active_beams.push(Beam {
             tokens: vec![SOS_IDX],
             score: 0.0,
@@ -122,7 +124,7 @@ impl BeamSearchEngine {
             // sort in descending order to put high scorers first
             self.active_beams.sort();
             self.active_beams.reverse();
-            self.expand_beams(&prev_word)?;
+            self.expand_beams(prev_word, decoder)?;
 
             level += 1;
         }
@@ -133,7 +135,7 @@ impl BeamSearchEngine {
     }
     /// selects the top branching_factor continuation beams for each beam in beams
     /// and adds them to active_beams or finished_beams
-    fn expand_beams(&mut self, prev_word: &Option<String>) -> Result<(), Error> {
+    fn expand_beams(&mut self, prev_word: &Option<String>, decoder: &mut Decoder) -> Result<()> {
 
         let beam_width = self.beam_width as usize;
         let beams_to_expand: Vec<Beam> = self.active_beams
@@ -144,7 +146,7 @@ impl BeamSearchEngine {
             .map(|b| b.tokens.iter().map(|t| *t as i32).collect())
             .collect();
 
-        let mut result = self.decoder.decode_batched(&tokens)?;
+        let mut result = decoder.decode_batched(&tokens)?;
 
         for (i, beam_continuation) in result.iter_mut().enumerate() {
             let current_pos = beams_to_expand[i].tokens.len() - 1;

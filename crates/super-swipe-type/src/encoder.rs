@@ -8,10 +8,12 @@ use crate::swipe_trajectory_processor::FeaturePoint;
 const INPUT_TRAJECTORY_FEATURES: &str = "trajectory_features";
 const INPUT_NEAREST_KEYS: &str = "nearest_keys";
 const INPUT_ACTUAL_LENGTH: &str = "actual_length";
+#[derive(Debug)]
 pub(crate) struct EncodeResult {
     pub memory_tensor: Tensor<f32>,
     pub actual_length_tensor: Tensor<i32>,
 }
+#[derive(Debug)]
 pub(crate) struct Encoder {
     pub(crate) session: Session,
     pub(crate) max_sequence_length: usize

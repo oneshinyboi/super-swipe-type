@@ -1,7 +1,7 @@
 mod swipe_trajectory_processor;
-mod keyboard_manager;
+pub mod keyboard_manager;
 mod encoder;
-mod swipe_orchestrator;
+pub mod swipe_orchestrator;
 mod decoder;
 mod beam_search;
 #[cfg(test)]
@@ -9,7 +9,6 @@ mod tests;
 mod dictionary;
 
 use std::cmp::Ordering;
-use crate::encoder::EncodeResult;
 use std::ops::Sub;
 use std::time::Duration;
 use vector2::Vector2;
@@ -26,7 +25,15 @@ pub struct SwipePoint {
     point: Vector2,
     timestamp: Duration,
 }
-#[derive(Clone)]
+impl SwipePoint {
+    pub fn new(x_pos: f64, y_pos: f64, timestamp: Duration) -> Self {
+        Self {
+            point: Vector2 {x: x_pos, y: y_pos},
+            timestamp,
+        }
+    }
+}
+#[derive(Clone, Debug)]
 pub struct SwipeCandidate {
     pub word: String,
     pub confidence: f32,

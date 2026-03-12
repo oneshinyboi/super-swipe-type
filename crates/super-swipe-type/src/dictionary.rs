@@ -43,12 +43,13 @@ impl From<fst::Error> for DictionaryCreationError {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct Dictionary {
-    unigrams: Map<Mmap>,
-    bigrams: Map<Mmap>,
+    unigrams: Map<Vec<u8>>,
+    bigrams: Map<Vec<u8>>,
     pattern_manager: PatternManager
 }
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct PatternManager {
     word: String,
     search_pattern: String,
@@ -165,11 +166,31 @@ impl Dictionary {
         }
     }
     pub fn create_from_file(unigram_fst_file: &Path, bigram_fst_file: &Path) -> Result<Self, DictionaryCreationError> {
-        let unigram_mmap = unsafe { Mmap::map(&File::open(unigram_fst_file)?)? };
-        let bigram_mmap = unsafe { Mmap::map(&File::open(bigram_fst_file)?)? };
+        let unigram_mmap = unsafe { Mmap::map(&File::open(unigram_fst_file)?)? }[..].into();
+        let bigram_mmap = unsafe { Mmap::map(&File::open(bigram_fst_file)?)? }[..].into();
 
         let unigrams = Map::new(unigram_mmap)?;
         let bigrams = Map::new(bigram_mmap)?;
+        Ok(Self {
+            unigrams,
+            bigrams,
+            pattern_manager: PatternManager::default()
+        })
+    }
+    
+    /// Creates a Dictionary from byte arrays, suitable for use with `include_bytes!`
+    /// 
+    /// # Example
+    /// ```
+    /// const UNIGRAMS: &[u8] = include_bytes!("path/to/unigrams.fst");
+    /// const BIGRAMS: &[u8] = include_bytes!("path/to/bigrams.fst");
+    /// 
+    /// let dict = Dictionary::create_from_byte_array(UNIGRAMS, BIGRAMS)?;
+    /// ```
+    pub fn create_from_byte_array(unigram_bytes: &'static [u8], bigram_bytes: &'static [u8]) -> Result<Self, DictionaryCreationError> {
+        let unigrams = Map::new(unigram_bytes[..].into())?;
+        let bigrams = Map::new(bigram_bytes[..].into())?;
+        
         Ok(Self {
             unigrams,
             bigrams,

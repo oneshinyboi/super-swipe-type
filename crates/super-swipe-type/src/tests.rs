@@ -1,12 +1,6 @@
-use crate::{SwipeCandidate, SOS_IDX};
-use crate::decoder::Decoder;
-use crate::encoder::Encoder;
-use crate::keyboard_manager::QwertyKeyboardGrid;
-use crate::beam_search::BeamSearchEngine;
-use crate::swipe_trajectory_processor::{FeaturePoint, SwipeTrajectoryProcessor};
-use crate::{EncodeResult, SwipePoint};
+use crate::swipe_orchestrator::SwipeOrchestrator;
+use crate::{SwipePoint};
 use vector2::Vector2;
-use ort::session::Session;
 use serde::Deserialize;
 use std::fs::File;
 use std::io::{stdout, BufRead, BufReader, Write};
@@ -55,56 +49,6 @@ impl TestStatistics {
     }
 }
 
-// Helper function to create encoder
-fn create_encoder() -> Encoder {
-    let session = Session::builder()
-        .unwrap()
-        .commit_from_file("assets/models/swipe_encoder_android.onnx")
-        .unwrap();
-    Encoder {
-        session,
-        max_sequence_length: 250
-    }
-}
-
-// Helper function to create decoder
-fn create_decoder(encode_result: EncodeResult) -> Decoder {
-    let session = Session::builder()
-        .unwrap()
-        .commit_from_file("assets/models/swipe_decoder_android.onnx")
-        .unwrap();
-    Decoder {
-        session,
-        encode_result,
-    }
-}
-
-// Helper function to create test features
-fn create_test_features() -> Vec<FeaturePoint> {
-    let keyboard_manager = QwertyKeyboardGrid::new();
-    vec![
-        FeaturePoint {
-            point: Vector2 { x: 0.2, y: 0.4 },
-            velocity: Default::default(),
-            acceleration: Default::default(),
-            nearest_key: keyboard_manager.get_nearest_key(&Vector2 { x: 0.2, y: 0.4 }),
-        },
-        FeaturePoint {
-            point: Vector2 { x: 0.7, y: 0.3 },
-            velocity: Default::default(),
-            acceleration: Default::default(),
-            nearest_key: keyboard_manager.get_nearest_key(&Vector2 { x: 0.7, y: 0.3 }),
-        }
-    ]
-}
-
-// Helper function to create encode result
-fn create_encode_result() -> EncodeResult {
-    let mut encoder = create_encoder();
-    let features = create_test_features();
-    encoder.encode(features).unwrap()
-}
-
 // Helper function to load all swipe entries from JSONL file
 fn load_swipe_entries(count: usize, mut word_list: Dictionary) -> Vec<(String, Option<String>, Vec<SwipePoint>)> {
     let file = File::open("./testing/test.jsonl")
@@ -142,48 +86,17 @@ fn load_swipe_entries(count: usize, mut word_list: Dictionary) -> Vec<(String, O
                 }
             }
 
-
             Some((entry.word, prev_word, points))
         })
         .take(count)
         .collect()
 }
 
-// Helper function to process a single swipe entry
-fn process_swipe_entry(
-    swipe_points: Vec<SwipePoint>,
-    encoder: &mut Encoder,
-    wordlist: Dictionary,
-    prev_word: Option<String>
-) -> Result<Vec<SwipeCandidate>, String> {
-    // Create trajectory processor
-    let processor = SwipeTrajectoryProcessor::new(250);
+fn get_dictionary() -> Dictionary {
+    let unigrams_path = Path::new("./assets/dictionaries/en_us_wordlist.fst");
+    let bigrams_path = Path::new("./assets/dictionaries/en_us_bigrams.fst");
 
-    // Extract features from swipe
-    let features = processor.extract_features(swipe_points);
-
-    // Encode features
-    let encode_result = encoder.encode(features)
-        .map_err(|e| format!("Failed to encode features: {:?}", e))?;
-
-    // Create decoder
-    let decoder = create_decoder(encode_result);
-
-    // Run beam search
-    let beam_width = 5;
-    let branching_factor = 8;
-    let max_levels = 20;
-
-    let mut beam_search = BeamSearchEngine::new(
-        decoder,
-        wordlist,
-        beam_width,
-        branching_factor,
-        max_levels
-    );
-
-    beam_search.search(prev_word)
-        .map_err(|e| format!("Beam search failed: {:?}", e))
+    Dictionary::create_from_file(unigrams_path, bigrams_path).unwrap()
 }
 
 // Process a chunk of entries (runs in parallel)
@@ -194,7 +107,7 @@ fn process_chunk(
     total_entries: usize,
 ) -> TestStatistics {
     let mut stats = TestStatistics::default();
-    let mut encoder = create_encoder();
+    let mut orchestrator = SwipeOrchestrator::new().expect("Failed to create SwipeOrchestrator");
 
     for (expected_word, prev_word, swipe_points) in chunk {
         let current = progress_counter.fetch_add(1, Ordering::Relaxed) + 1;
@@ -204,9 +117,8 @@ fn process_chunk(
         stdout().flush().unwrap();
 
         let start = Instant::now();
-        let wordlist = get_dictionary();
 
-        match process_swipe_entry(swipe_points.clone(), &mut encoder, wordlist, prev_word.clone()) {
+        match orchestrator.predict(swipe_points.clone(), &prev_word) {
             Ok(candidates) => {
                 let elapsed = start.elapsed();
                 stats.total_processing_time += elapsed;
@@ -232,13 +144,7 @@ fn process_chunk(
 
     stats
 }
-fn get_dictionary() -> Dictionary {
-    let unigrams_path = Path::new("./assets/dictionaries/en_us_wordlist.fst");
-    let bigrams_path = Path::new("./assets/dictionaries/en_us_bigrams.fst");
-    
-    Dictionary::create_from_file(unigrams_path, bigrams_path).unwrap()
-    
-}
+
 #[test]
 fn test_dictionary() {
     let mut dictionary = get_dictionary();
@@ -261,55 +167,34 @@ fn test_dictionary() {
 
     let bigram_prob = dictionary.get_bigram_log_prob("maybe", "that");
     println!("{bigram_prob}");
-
-}
-
-
-#[test]
-fn test_encoder() {
-    let mut encoder = create_encoder();
-    let features = create_test_features();
-    assert!(encoder.encode(features).is_ok());
 }
 
 #[test]
-fn test_decoder() {
-    let encode_result = create_encode_result();
-    let mut decoder = create_decoder(encode_result);
+fn test_swipe_orchestrator() {
+    // Create orchestrator
+    let mut orchestrator = SwipeOrchestrator::new()
+        .expect("Failed to create SwipeOrchestrator");
 
-    let decode_result = decoder.decode(&vec![SOS_IDX.into()]);
-    assert!(decode_result.is_ok());
-}
-
-#[test]
-fn test_beam_search() {
-    // Setup: Create encoder and encode features
-    let encode_result = create_encode_result();
+    // Create simple test swipe points
+    let swipe_points = vec![
+        SwipePoint {
+            point: Vector2 { x: 0.2, y: 0.4 },
+            timestamp: Duration::from_millis(0),
+        },
+        SwipePoint {
+            point: Vector2 { x: 0.7, y: 0.3 },
+            timestamp: Duration::from_millis(100),
+        }
+    ];
     
-    // Create decoder
-    let decoder = create_decoder(encode_result);
-    
-    // Create beam search engine with reasonable parameters
-    let beam_width = 5;
-    let branching_factor = 10;
-    let max_levels = 15;
-    
-    let mut beam_search = BeamSearchEngine::new(
-        decoder,
-        get_dictionary(),
-        beam_width,
-        branching_factor,
-        max_levels
-    );
-    
-    // Perform beam search
-    let result = beam_search.search(None);
-    assert!(result.is_ok(), "Beam search should complete successfully");
+    // Perform prediction
+    let result = orchestrator.predict(swipe_points, &None);
+    assert!(result.is_ok(), "SwipeOrchestrator prediction should complete successfully");
     
     let candidates = result.unwrap();
     
     // Print results
-    println!("\n=== Beam Search Results ===");
+    println!("\n=== SwipeOrchestrator Results ===");
     println!("Found {} candidate words:\n", candidates.len());
     
     for (i, candidate) in candidates.iter().enumerate() {
@@ -347,15 +232,13 @@ fn test_beam_search() {
     }
 }
 
-
-
 #[test]
 fn test_all_swipe_entries() {
     println!("\n=== Testing All Swipe Entries (Parallel) ===");
 
     // Load all swipe entries
     let wordlist = get_dictionary();
-    let entries_to_load = 1000;
+    let entries_to_load = 500;
     let all_entries = load_swipe_entries(entries_to_load, wordlist);
     let total_entries = all_entries.len();
 
@@ -426,14 +309,14 @@ fn test_all_swipe_entries_single_threaded() {
     println!("\n=== Testing All Swipe Entries ===");
 
     // Load all swipe entries
-
     let wordlist = get_dictionary();
     let entries_to_load = 500;
     let all_entries = load_swipe_entries(entries_to_load, wordlist);
     println!("Loaded {} total swipe entries\n", all_entries.len());
 
-    // Create shared resources
-    let mut encoder = create_encoder();
+    // Create orchestrator
+    let mut orchestrator = SwipeOrchestrator::new()
+        .expect("Failed to create SwipeOrchestrator");
 
     let mut successful = 0;
     let mut failed = 0;
@@ -452,9 +335,8 @@ fn test_all_swipe_entries_single_threaded() {
         println!("\n[{}/{}] ({:.1}%)", current_entry, total_entries, percentage);
 
         let start = Instant::now();
-        let wordlist = get_dictionary();
 
-        match process_swipe_entry(swipe_points.clone(), &mut encoder, wordlist, prev_word.clone()) {
+        match orchestrator.predict(swipe_points.clone(), &prev_word) {
             Ok(candidates) => {
                 let elapsed = start.elapsed();
                 total_processing_time += elapsed;

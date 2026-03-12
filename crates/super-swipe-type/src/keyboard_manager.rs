@@ -11,14 +11,21 @@ const ROW_0_OFFSET: f64 = 0.0;
 const ROW_1_OFFSET: f64 = 0.05;
 const ROW_2_OFFSET: f64 = 0.15;
 
-pub(crate) struct QwertyKeyboardGrid {
-    key_positions: HashMap<char, Vector2>
+#[derive(Debug)]
+pub struct QwertyKeyboardGrid {
+    pub key_positions: HashMap<char, Vector2>
 }
 impl QwertyKeyboardGrid {
     pub fn new() -> Self {
         Self {
             key_positions: Self::build_keyboard_positions()
         }
+    }
+    pub fn get_key_height() -> f64 {
+        ROW_HEIGHT
+    }
+    pub fn get_key_width() -> f64 {
+        KEY_WIDTH
     }
     fn build_keyboard_positions() -> HashMap<char, Vector2> {
         let mut out = HashMap::new();

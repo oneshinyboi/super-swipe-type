@@ -727,6 +727,7 @@ dependencies = [
 name = "super-swipe-type"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "fst",
  "memmap",
  "ort",

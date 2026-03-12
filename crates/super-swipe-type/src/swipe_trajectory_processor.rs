@@ -10,6 +10,7 @@ pub(crate) struct FeaturePoint {
     pub(crate) acceleration: Vector2,
     pub(crate) nearest_key: char,
 }
+#[derive(Debug)]
 pub struct SwipeTrajectoryProcessor {
     max_sequence_length: usize,
     keyboard_grid: QwertyKeyboardGrid
