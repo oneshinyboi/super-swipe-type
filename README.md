@@ -39,4 +39,5 @@ let best_predicted_word = result.unwrap().first().unwrap().word
 ```
 The swipe points should be normalized points over the qwerty keyboard area. For example `0,0` is the top left corner of the Q key and `0,1` is top right corner of hte P key
 
+![img](https://github.com/oneshinyboi/super-swipe-type/blob/main/assets/qwerty.png?raw=true)
 
