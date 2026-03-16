@@ -1,7 +1,6 @@
-use vector2::Vector2;
-use crate::SwipePoint;
 use crate::keyboard_manager::QwertyKeyboardGrid;
-
+use crate::SwipePoint;
+use vector2::Vector2;
 
 #[derive(Clone)]
 pub(crate) struct FeaturePoint {
@@ -13,21 +12,22 @@ pub(crate) struct FeaturePoint {
 #[derive(Debug)]
 pub struct SwipeTrajectoryProcessor {
     max_sequence_length: usize,
-    keyboard_grid: QwertyKeyboardGrid
+    keyboard_grid: QwertyKeyboardGrid,
 }
 /// turns swipe points into feature points
 impl SwipeTrajectoryProcessor {
     pub fn new(max_sequence_length: usize) -> Self {
         Self {
             max_sequence_length,
-            keyboard_grid: QwertyKeyboardGrid::new()
+            keyboard_grid: QwertyKeyboardGrid::new(),
         }
     }
     pub fn extract_features(&self, normalized_swipe_input: Vec<SwipePoint>) -> Vec<FeaturePoint> {
         // resample input to fit max length
         let mut normalized_swipe_input = normalized_swipe_input;
         if normalized_swipe_input.len() > self.max_sequence_length {
-            normalized_swipe_input = Self::resample_points(normalized_swipe_input, self.max_sequence_length);
+            normalized_swipe_input =
+                Self::resample_points(normalized_swipe_input, self.max_sequence_length);
         }
         self.calculate_features(&normalized_swipe_input)
     }
@@ -38,29 +38,31 @@ impl SwipeTrajectoryProcessor {
 
         dt.push(0);
         for i in 1..n {
-            dt.push(swipe_points[i].timestamp.as_millis()-swipe_points[i-1].timestamp.as_millis())
+            dt.push(
+                swipe_points[i].timestamp.as_millis() - swipe_points[i - 1].timestamp.as_millis(),
+            )
         }
 
         out.push(FeaturePoint {
             point: swipe_points[0].point.clone(),
             velocity: Vector2::ZERO,
             acceleration: Vector2::ZERO,
-            nearest_key: self.keyboard_grid.get_nearest_key(&swipe_points[0].point)
+            nearest_key: self.keyboard_grid.get_nearest_key(&swipe_points[0].point),
         });
 
         // calculate velocities
         for i in 1..n {
             out.push(FeaturePoint {
                 point: swipe_points[i].point.clone(),
-                velocity: (swipe_points[i].point - swipe_points[i-1].point) / dt[i] as f64,
+                velocity: (swipe_points[i].point - swipe_points[i - 1].point) / dt[i] as f64,
                 acceleration: Vector2::ZERO,
-                nearest_key: self.keyboard_grid.get_nearest_key(&swipe_points[i].point)
+                nearest_key: self.keyboard_grid.get_nearest_key(&swipe_points[i].point),
             })
         }
 
         // calculate acceleration
         for i in 1..n {
-            out[i].acceleration = (out[i].velocity - out[i-1].velocity) / dt[i] as f64
+            out[i].acceleration = (out[i].velocity - out[i - 1].velocity) / dt[i] as f64
         }
         out
     }
@@ -86,7 +88,8 @@ impl SwipeTrajectoryProcessor {
 
         // Split into 3 zones: start (35%), middle (30%), end (35%)
         let start_zone_end = 1 + (available_range * 0.35) as usize;
-        let end_zone_start = (original_length - 1).saturating_sub((available_range * 0.35) as usize);
+        let end_zone_start =
+            (original_length - 1).saturating_sub((available_range * 0.35) as usize);
 
         let points_in_start = ((num_middle as f32) * 0.35) as usize;
         let points_in_end = ((num_middle as f32) * 0.35) as usize;

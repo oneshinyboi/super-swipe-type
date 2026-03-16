@@ -2,9 +2,9 @@ use crate::decoder::Decoder;
 use crate::dictionary::Dictionary;
 use crate::keyboard_manager::KeyTokenizer;
 use crate::{SwipeCandidate, EOS_IDX, PAD_IDX, SOS_IDX};
+use anyhow::Result;
 use std::cmp::Ordering;
 use std::sync::OnceLock;
-use anyhow::Result;
 
 impl SwipeCandidate {
     fn from_beam(beam: &Beam, unigram_log_prob: f32, bigram_log_prob: f32) -> Self {
@@ -16,7 +16,8 @@ impl SwipeCandidate {
         }
         Self {
             word,
-            confidence: (beam.normalized_score() + 0.3 * unigram_log_prob + 0.3 * bigram_log_prob).exp()
+            confidence: (beam.normalized_score() + 0.3 * unigram_log_prob + 0.3 * bigram_log_prob)
+                .exp(),
         }
     }
 }
@@ -28,7 +29,7 @@ pub(crate) struct BeamSearchEngine {
     max_levels: u32,
     temperature: f32,
     active_beams: Vec<Beam>,
-    candidates: Vec<SwipeCandidate>
+    candidates: Vec<SwipeCandidate>,
 }
 
 #[derive(Clone, Debug)]
@@ -49,7 +50,7 @@ impl Beam {
 #[derive(Debug)]
 struct TokenProb {
     log_prob: f32,
-    index: u8
+    index: u8,
 }
 
 impl Eq for TokenProb {}
@@ -82,20 +83,25 @@ impl PartialEq<Self> for Beam {
 
 impl PartialOrd<Self> for Beam {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.normalized_score().partial_cmp(&other.normalized_score())
+        self.normalized_score()
+            .partial_cmp(&other.normalized_score())
     }
 }
 
 impl Ord for Beam {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(&other)
-            .unwrap_or(Ordering::Less)
+        self.partial_cmp(&other).unwrap_or(Ordering::Less)
     }
 }
 
-
 impl BeamSearchEngine {
-    pub fn new(dictionary: Dictionary, beam_width: u32, branching_factor: u32, max_levels: u32, temperature: f32) -> Self {
+    pub fn new(
+        dictionary: Dictionary,
+        beam_width: u32,
+        branching_factor: u32,
+        max_levels: u32,
+        temperature: f32,
+    ) -> Self {
         Self {
             dictionary,
             beam_width,
@@ -106,13 +112,17 @@ impl BeamSearchEngine {
             candidates: Vec::new(),
         }
     }
-    pub fn search(&mut self, prev_word: &Option<String>, decoder: &mut Decoder) -> Result<Vec<SwipeCandidate>> {
+    pub fn search(
+        &mut self,
+        prev_word: &Option<String>,
+        decoder: &mut Decoder,
+    ) -> Result<Vec<SwipeCandidate>> {
         let mut level = 0;
 
         // initialize beams
         self.active_beams = Vec::new();
         self.candidates = Vec::new();
-        
+
         self.active_beams.push(Beam {
             tokens: vec![SOS_IDX],
             score: 0.0,
@@ -136,13 +146,14 @@ impl BeamSearchEngine {
     /// selects the top branching_factor continuation beams for each beam in beams
     /// and adds them to active_beams or finished_beams
     fn expand_beams(&mut self, prev_word: &Option<String>, decoder: &mut Decoder) -> Result<()> {
-
         let beam_width = self.beam_width as usize;
-        let beams_to_expand: Vec<Beam> = self.active_beams
+        let beams_to_expand: Vec<Beam> = self
+            .active_beams
             .drain(..beam_width.min(self.active_beams.len()))
             .collect();
 
-        let tokens: Vec<Vec<i32>> = beams_to_expand.iter()
+        let tokens: Vec<Vec<i32>> = beams_to_expand
+            .iter()
             .map(|b| b.tokens.iter().map(|t| *t as i32).collect())
             .collect();
 
@@ -173,11 +184,11 @@ impl BeamSearchEngine {
                             bigram_prob = self.dictionary.get_bigram_log_prob(prev_word, &word);
                         }
 
-                        let mut candidate = SwipeCandidate::from_beam(&new_beam, log_prob, bigram_prob);
+                        let mut candidate =
+                            SwipeCandidate::from_beam(&new_beam, log_prob, bigram_prob);
                         candidate.word = word;
                         self.candidates.push(candidate);
                     }
-
                 } else if let Some(_) = KeyTokenizer::index_to_char(continuation.index) {
                     new_beam.finished = false;
                     self.active_beams.push(new_beam);
@@ -192,10 +203,14 @@ impl BeamSearchEngine {
 
         let log_probs: Vec<f32> = self.log_soft_max(logits);
 
-        let mut log_token_probs : Vec<TokenProb> = log_probs
-            .iter().enumerate()
+        let mut log_token_probs: Vec<TokenProb> = log_probs
+            .iter()
+            .enumerate()
             .filter(|(_, p)| !p.is_nan())
-            .map(|(i, p)| TokenProb {log_prob: *p, index: i as u8 })
+            .map(|(i, p)| TokenProb {
+                log_prob: *p,
+                index: i as u8,
+            })
             .collect();
 
         log_token_probs.sort();
@@ -207,13 +222,17 @@ impl BeamSearchEngine {
 
     /// convert logits to log probabilities
     fn log_soft_max(&self, logits: &Vec<f32>) -> Vec<f32> {
-        let scaled_logits = if self.temperature == 1.0 { logits } else {
+        let scaled_logits = if self.temperature == 1.0 {
+            logits
+        } else {
             &logits.iter().map(|l| l / self.temperature).collect()
         };
         let mut max_logit = f32::NEG_INFINITY;
 
         for logit in scaled_logits {
-            if logit > &max_logit { max_logit = *logit }
+            if logit > &max_logit {
+                max_logit = *logit
+            }
         }
         let mut sum_exp = 0.0;
         for logit in scaled_logits {
@@ -231,7 +250,6 @@ impl BeamSearchEngine {
         let allowed_next_chars = self.dictionary.get_allowed_next_chars(&partial_word);
         let is_word = self.dictionary.does_word_exist(&partial_word);
 
-
         for i in 0..logits.len() as u8 {
             if i == SOS_IDX || i == PAD_IDX {
                 logits[i as usize] = f32::NEG_INFINITY;
@@ -243,7 +261,7 @@ impl BeamSearchEngine {
                         if !allowed_next_chars.contains(&char) {
                             logits[i as usize] = f32::NEG_INFINITY;
                         }
-                    },
+                    }
                     None => {}
                 }
             }

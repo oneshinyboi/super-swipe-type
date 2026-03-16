@@ -1,9 +1,9 @@
-use ort::value::{DynTensor, Tensor};
-use std::collections::HashMap;
-use ort::Error;
-use ort::session::Session;
 use crate::keyboard_manager::KeyTokenizer;
 use crate::swipe_trajectory_processor::FeaturePoint;
+use ort::session::Session;
+use ort::value::{DynTensor, Tensor};
+use ort::Error;
+use std::collections::HashMap;
 
 const INPUT_TRAJECTORY_FEATURES: &str = "trajectory_features";
 const INPUT_NEAREST_KEYS: &str = "nearest_keys";
@@ -16,7 +16,7 @@ pub(crate) struct EncodeResult {
 #[derive(Debug)]
 pub(crate) struct Encoder {
     pub(crate) session: Session,
-    pub(crate) max_sequence_length: usize
+    pub(crate) max_sequence_length: usize,
 }
 impl Encoder {
     // encodes swipe features and returns memory tensor of encoder
@@ -35,12 +35,12 @@ impl Encoder {
 
         Ok(EncodeResult {
             memory_tensor: Tensor::from_array((shape.clone(), data.to_vec()))?,
-            actual_length_tensor
+            actual_length_tensor,
         })
     }
 
     fn create_trajectory_tensor(&self, features: &Vec<FeaturePoint>) -> ort::Result<Tensor<f32>> {
-        let mut feature_array= Vec::new();
+        let mut feature_array = Vec::new();
         for feature_point in features {
             feature_array.push(feature_point.point.x as f32);
             feature_array.push(feature_point.point.y as f32);
@@ -49,7 +49,7 @@ impl Encoder {
             feature_array.push(feature_point.acceleration.x as f32);
             feature_array.push(feature_point.acceleration.y as f32);
         }
-        feature_array.resize(self.max_sequence_length*6, 0.0);
+        feature_array.resize(self.max_sequence_length * 6, 0.0);
         Tensor::from_array(([1, self.max_sequence_length, 6], feature_array))
     }
 

@@ -1,12 +1,12 @@
-mod swipe_trajectory_processor;
-pub mod keyboard_manager;
-mod encoder;
-pub mod swipe_orchestrator;
-mod decoder;
 mod beam_search;
+mod decoder;
+mod dictionary;
+mod encoder;
+pub mod keyboard_manager;
+pub mod swipe_orchestrator;
+mod swipe_trajectory_processor;
 #[cfg(test)]
 mod tests;
-mod dictionary;
 
 use std::cmp::Ordering;
 use std::time::Duration;
@@ -16,25 +16,61 @@ use vector2::Vector2;
 // done: feature extractor, decoder, encoder, beam search
 
 const PAD_IDX: u8 = 0;
+
+/// Token index representing the start-of-sequence (SOS) symbol used by the
+/// beam-search decoder.  Passed as the initial decoder input token.
 pub const SOS_IDX: u8 = 2;
+
+/// Token index representing the end-of-sequence (EOS) symbol used by the
+/// beam-search decoder.  When the decoder emits this token, prediction for
+/// the current beam terminates.
 pub const EOS_IDX: u8 = 3;
+
 const DECODER_SEQ_LEN: u8 = 20; // Must match model export
+
+/// A single raw point captured during a swipe gesture.
+///
+/// Coordinates are **normalised** over the QWERTY keyboard area:
+/// - `(0.0, 0.0)` is the top-left corner of the **Q** key.
+/// - `(1.0, 0.0)` is the top-right corner of the **P** key.
+/// - `(0.0, 1.0)` / `(1.0, 1.0)` are the corresponding bottom corners.
+///
+/// Construct with [`SwipePoint::new`] and collect a sequence of these to
+/// pass to [`swipe_orchestrator::SwipeOrchestrator::predict`].
 #[derive(Clone, Debug)]
 pub struct SwipePoint {
     point: Vector2,
     timestamp: Duration,
 }
 impl SwipePoint {
+    /// Creates a new [`SwipePoint`].
+    ///
+    /// # Parameters
+    /// - `x_pos` – Normalised horizontal position in `[0.0, 1.0]`.
+    /// - `y_pos` – Normalised vertical position in `[0.0, 1.0]`.
+    /// - `timestamp` – Time elapsed since the start of the swipe gesture.
     pub fn new(x_pos: f64, y_pos: f64, timestamp: Duration) -> Self {
         Self {
-            point: Vector2 {x: x_pos, y: y_pos},
+            point: Vector2 { x: x_pos, y: y_pos },
             timestamp,
         }
     }
 }
+
+/// A predicted word candidate returned by [`swipe_orchestrator::SwipeOrchestrator::predict`].
+///
+/// The results vector is sorted in descending order of `confidence`, so
+/// `results[0]` is always the most likely prediction.
+///
+/// # Ordering
+/// [`SwipeCandidate`] implements [`Ord`] / [`PartialOrd`] by `confidence`,
+/// and [`Eq`] / [`PartialEq`] by `word`.
 #[derive(Clone, Debug)]
 pub struct SwipeCandidate {
+    /// The predicted word string.
     pub word: String,
+    /// Log-probability–based confidence score.  Higher values indicate a
+    /// more likely prediction.
     pub confidence: f32,
 }
 impl Eq for SwipeCandidate {}
@@ -56,4 +92,3 @@ impl Ord for SwipeCandidate {
         self.partial_cmp(other).unwrap_or(Ordering::Less)
     }
 }
-
