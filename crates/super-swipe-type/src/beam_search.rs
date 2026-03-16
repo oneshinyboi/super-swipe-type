@@ -43,7 +43,7 @@ impl Beam {
     fn normalized_score(&self) -> f32 {
         *self.normalized_score_cache.get_or_init(|| {
             let len = self.tokens.len() as f32;
-            self.score / ((5.0 + len) / 6.0).powf(1.2)
+            self.score / ((5.0 + len) / 6.0).powf(0.8)
         })
     }
 }

@@ -1536,7 +1536,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "super-swipe-type"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "cached-path",
@@ -1858,7 +1858,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vocab-builder"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "fst",
 ]

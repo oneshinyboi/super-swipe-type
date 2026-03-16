@@ -8,7 +8,6 @@ use anyhow::Result;
 use cached_path::cached_path;
 use ort::session::Session;
 use std::fs;
-use std::fs::File;
 
 const ASSET_COMPAT_VER: &str = "v0.1.2";
 const MAX_SEQUENCE_LENGTH: usize = 250; // max length of swipe points that can be processed by the model at once
