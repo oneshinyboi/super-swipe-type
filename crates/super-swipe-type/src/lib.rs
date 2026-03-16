@@ -17,14 +17,9 @@ use vector2::Vector2;
 
 const PAD_IDX: u8 = 0;
 
-/// Token index representing the start-of-sequence (SOS) symbol used by the
-/// beam-search decoder.  Passed as the initial decoder input token.
-pub const SOS_IDX: u8 = 2;
+const SOS_IDX: u8 = 2;
 
-/// Token index representing the end-of-sequence (EOS) symbol used by the
-/// beam-search decoder.  When the decoder emits this token, prediction for
-/// the current beam terminates.
-pub const EOS_IDX: u8 = 3;
+const EOS_IDX: u8 = 3;
 
 const DECODER_SEQ_LEN: u8 = 20; // Must match model export
 
