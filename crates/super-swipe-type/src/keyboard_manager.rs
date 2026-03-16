@@ -31,19 +31,19 @@ impl QwertyKeyboardGrid {
         let mut out = HashMap::new();
         for (i, char) in ROW_0.chars().enumerate() {
             out.insert(char, Vector2 {
-                x: ROW_0_OFFSET + i as f64 * KEY_WIDTH,
+                x: ROW_0_OFFSET + i as f64 * KEY_WIDTH + KEY_WIDTH / 2.0,
                 y: ROW_HEIGHT * 0.0 + ROW_HEIGHT / 2.0
             });
         }
         for (i, char ) in ROW_1.chars().enumerate() {
             out.insert(char, Vector2 {
-                x: ROW_1_OFFSET + i as f64 * KEY_WIDTH,
+                x: ROW_1_OFFSET + i as f64 * KEY_WIDTH + KEY_WIDTH / 2.0,
                 y: ROW_HEIGHT * 1.0 + ROW_HEIGHT / 2.0
             });
         }
         for (i, char) in ROW_2.chars().enumerate() {
             out.insert(char, Vector2 {
-                x: ROW_2_OFFSET + i as f64 * KEY_WIDTH,
+                x: ROW_2_OFFSET + i as f64 * KEY_WIDTH + KEY_WIDTH / 2.0,
                 y: ROW_HEIGHT * 2.0 + ROW_HEIGHT / 2.0
             });
         }

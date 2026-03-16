@@ -37,7 +37,6 @@ let swipe_points = vec![
 let result = orchestrator.predict(swipe_points, &None);
 let best_predicted_word = result.unwrap().first().unwrap().word
 ```
-The swipe points should be normalized points over the qwerty keyboard area according to this graphic, where the top left corner which is centred on the middle of the q key represents the point 0,0 and the bottom right which is aligned at the intersection of center of the P key and the center of the bottom rowrepresents 1,1.
+The swipe points should be normalized points over the qwerty keyboard area. For example `0,0` is the top left corner of the Q key and `0,1` is top right corner of hte P key
 
 
-<img width="1703" height="770" alt="vis" src="https://github.com/user-attachments/assets/829269de-6fbf-4b57-915a-fd27c48de4fc" />
