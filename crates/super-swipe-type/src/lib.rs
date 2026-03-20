@@ -12,9 +12,6 @@ use std::cmp::Ordering;
 use std::time::Duration;
 use vector2::Vector2;
 
-// todo: wordlist, orchestrator, vocab trie
-// done: feature extractor, decoder, encoder, beam search
-
 const PAD_IDX: u8 = 0;
 
 const SOS_IDX: u8 = 2;
