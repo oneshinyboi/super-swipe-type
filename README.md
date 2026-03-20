@@ -1,5 +1,16 @@
-# Super-Swipe-Type
 
+
+<div align="center">
+    
+# Super-Swipe-Type
+    
+<a href="https://crates.io/crates/super-swipe-type">
+    <img src="https://img.shields.io/crates/v/super-swipe-type" alt="Crates.io Version" />
+</a>
+    <img src="https://img.shields.io/github/license/oneshinyboi/super-swipe-type" alt="License" />
+</div>
+
+<br/>
 A rust library for processing swipe type data and providing word predictions in real time. It is a lightweight port of the swipe to type engine powering [Clever Keys](https://github.com/tribixbite/CleverKeys?tab=readme-ov-file). Only English predictions for english are supported
 
 From the cleverkeys readme:
