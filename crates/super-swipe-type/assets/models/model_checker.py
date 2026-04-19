@@ -1,4 +1,5 @@
 import onnxruntime as ort
+import onnx
 import sys
 
 # Load the ONNX model
@@ -28,6 +29,17 @@ try:
         print(f"Output Shape: {output.shape}")
         print(f"Output Type: {output.type}")
         print("-" * 30)
+
+    # Track unique operators using a dictionary
+    model = onnx.load_model(sys.argv[1])
+    operators = {}
+    for node in model.graph.node:
+        operators[node.op_type] = operators.get(node.op_type, 0) + 1
+
+    print(f"\nUnique Operators ({len(operators)} types):")
+    print("-" * 30)
+    for op_type, count in sorted(operators.items()):
+        print(f"{op_type}: {count}")
 
 except Exception as e:
     print(f"Error loading or inspecting the ONNX model: {e}")

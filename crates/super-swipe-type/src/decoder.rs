@@ -1,22 +1,21 @@
-use crate::encoder::EncodeResult;
+use crate::encoder::{EncodeResult, OnnxSession};
 use crate::{DECODER_SEQ_LEN, PAD_IDX};
 use anyhow::{anyhow, Result};
-use ort::session::Session;
-use ort::value::Tensor;
-use std::collections::HashMap;
+use tract_onnx::prelude::*;
 
 #[derive(Debug)]
 pub(crate) struct Decoder {
-    pub(crate) session: Session,
+    pub(crate) session: OnnxSession,
     pub(crate) encode_result: Option<EncodeResult>,
 }
+
 impl Decoder {
     pub fn decode(&mut self, tokens: &Vec<i32>) -> Result<Vec<Vec<Vec<f32>>>> {
         let mut target_tokens = tokens.clone();
         target_tokens.resize(DECODER_SEQ_LEN.into(), PAD_IDX.into());
-
-        Ok(self.run_inference(1, target_tokens)?)
+        self.run_inference(1, target_tokens)
     }
+
     pub fn decode_sequentially(
         &mut self,
         batched_tokens: &Vec<Vec<i32>>,
@@ -27,6 +26,7 @@ impl Decoder {
         }
         Ok(out)
     }
+
     pub fn decode_batched(&mut self, batched_tokens: &Vec<Vec<i32>>) -> Result<Vec<Vec<Vec<f32>>>> {
         let mut batched_target_tokens: Vec<i32> = Vec::new();
 
@@ -36,8 +36,9 @@ impl Decoder {
             new_token.resize(DECODER_SEQ_LEN.into(), PAD_IDX.into());
             new_token
         }));
-        Ok(self.run_inference(batched_tokens.len(), batched_target_tokens)?)
+        self.run_inference(batched_tokens.len(), batched_target_tokens)
     }
+
     fn run_inference(
         &mut self,
         num_beams: usize,
@@ -47,23 +48,39 @@ impl Decoder {
             "use set_encode_result to provide the required tensors before running inference"
         ))?;
 
-        let target_tokens_tensor =
-            Tensor::from_array(([num_beams, DECODER_SEQ_LEN.into()], batched_target_tokens))?;
+        // Reconstruct the memory tensor from the stored data/shape
+        let memory_tensor: Tensor = tract_ndarray::ArrayD::from_shape_vec(
+            encode_result.memory_shape.as_slice(),
+            encode_result.memory_data.clone(),
+        )?
+        .into();
 
-        let mut decoder_inputs = HashMap::new();
-        decoder_inputs.insert("memory", encode_result.memory_tensor.clone().upcast());
-        decoder_inputs.insert(
-            "actual_src_length",
-            encode_result.actual_length_tensor.clone().upcast(),
-        );
-        decoder_inputs.insert("target_tokens", target_tokens_tensor.upcast());
+        // actual_src_length: shape [num_beams] — repeat the length once per beam so the
+        // cross-attention mask broadcasts to [num_beams, enc_seq].
+        let length_tensor: Tensor =
+            tract_ndarray::Array1::from_elem(num_beams, encode_result.actual_length).into();
 
-        let output = self.session.run(decoder_inputs)?;
-        let (_shape, data) = output[0].try_extract_tensor::<f32>()?;
+        // target_tokens: shape [num_beams, DECODER_SEQ_LEN]
+        let seq_len: usize = DECODER_SEQ_LEN.into();
+        let target_tensor: Tensor = tract_ndarray::Array2::from_shape_vec(
+            (num_beams, seq_len),
+            batched_target_tokens,
+        )?
+        .into();
 
-        // un-flatten data output tensor
+        // Model inputs are ordered: memory, target_tokens, actual_src_length
+        let output = self.session.run(tvec![
+            memory_tensor.into(),
+            target_tensor.into(),
+            length_tensor.into(),
+        ])?;
+
+        let data_view = output[0].to_array_view::<f32>()?;
+        let data: Vec<f32> = data_view.iter().copied().collect();
+
+        // un-flatten: [num_beams, seq_len=20, vocab=30]
         Ok(data
-            .chunks_exact(DECODER_SEQ_LEN as usize * 30) // todo: explain why 30 is 30
+            .chunks_exact(DECODER_SEQ_LEN as usize * 30) // 30 = vocab size
             .map(|beam_slice| {
                 beam_slice
                     .chunks_exact(30)
@@ -72,6 +89,7 @@ impl Decoder {
             })
             .collect())
     }
+
     pub fn set_encode_result(&mut self, encode_result: EncodeResult) {
         self.encode_result = Some(encode_result);
     }

@@ -4,6 +4,7 @@ use crate::keyboard_manager::KeyTokenizer;
 use crate::{SwipeCandidate, EOS_IDX, PAD_IDX, SOS_IDX};
 use anyhow::Result;
 use std::cmp::Ordering;
+use std::mem;
 use std::sync::OnceLock;
 
 impl SwipeCandidate {
@@ -141,7 +142,7 @@ impl BeamSearchEngine {
 
         self.candidates.sort();
         self.candidates.reverse();
-        Ok(self.candidates.clone())
+        Ok(mem::take(&mut self.candidates))
     }
     /// selects the top branching_factor continuation beams for each beam in beams
     /// and adds them to active_beams or finished_beams

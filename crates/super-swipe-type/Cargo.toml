@@ -16,12 +16,12 @@ exclude = ["**/testing", "**/assets"]
 [dependencies]
 fst = "0.4.7"
 memmap = "0.7.0"
-ort = "2.0.0-rc.12"
 regex-automata = { version = "0.1.9", features = ["transducer"] }
 vector2 = "0.1.5"
 regex = "1.12.3"
 anyhow = "1.0.102"
 cached-path = "0.10.1"
+tract-onnx = "0.22.1"
 
 [dev-dependencies]
 serde_json = "1.0.149"
