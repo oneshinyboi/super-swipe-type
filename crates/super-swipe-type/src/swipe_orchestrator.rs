@@ -3,11 +3,11 @@ use crate::decoder::Decoder;
 use crate::dictionary::Dictionary;
 use crate::encoder::Encoder;
 use crate::swipe_trajectory_processor::SwipeTrajectoryProcessor;
-use crate::{SwipeCandidate, SwipePoint, DECODER_SEQ_LEN};
+use crate::{SwipeCandidate, SwipePoint};
 use anyhow::Result;
 use cached_path::cached_path;
+use ort::session::Session;
 use std::fs;
-use tract_onnx::prelude::*;
 
 const ASSET_COMPAT_VER: &str = "v0.1.2";
 const MAX_SEQUENCE_LENGTH: usize = 250; // max length of swipe points that can be processed by the model at once
@@ -80,64 +80,11 @@ impl SwipeOrchestrator {
             base_url
         ))?;
 
-        let encoder_bytes = fs::read(&encoder_path)?;
+        let encoder_bytes = fs::read(encoder_path)?;
         let decoder_bytes = fs::read(decoder_path)?;
 
-        // Encoder: batch=1 always.
-        // The ONNX loader pre-populates intermediate node facts (from value_info) with the
-        // symbolic 'batch' dim. These conflict with our concrete batch=1 input facts during
-        // analysis. Fix: clear all non-input node output facts so analysis starts from
-        // only our concrete input facts and propagates forward without contradictions.
-        let mut enc_model = tract_onnx::onnx()
-            .model_for_read(&mut std::io::Cursor::new(&encoder_bytes))?;
-        for node in enc_model.nodes_mut() {
-            for outlet in &mut node.outputs {
-                outlet.fact = InferenceFact::default();
-            }
-        }
-        let encoder_session = enc_model
-            .with_input_fact(0, f32::fact([1usize, MAX_SEQUENCE_LENGTH, 6]).into())?
-            .with_input_fact(1, i32::fact([1usize, MAX_SEQUENCE_LENGTH]).into())?
-            .with_input_fact(2, i32::fact([1usize]).into())?
-            .into_optimized()?
-            .into_runnable()?;
-
-        // Decoder: dec_seq is always DECODER_SEQ_LEN (20); num_beams is dynamic.
-        // Same issue: clear intermediate facts from value_info, then re-set input facts
-        // with dec_seq pinned to 20 so the self-attn Reshape([-1,1,1,20]) resolves.
-        let mut dec_model = tract_onnx::onnx()
-            .model_for_read(&mut std::io::Cursor::new(&decoder_bytes))?;
-        for node in dec_model.nodes_mut() {
-            for outlet in &mut node.outputs {
-                outlet.fact = InferenceFact::default();
-            }
-        }
-        // memory is always batch=1 from the encoder; num_beams only applies to target_tokens
-        // and actual_src_length (which must be [num_beams] for the cross-attention mask to
-        // broadcast to [num_beams, enc_seq] correctly).
-        let nb: TDim = dec_model.symbols.sym("n").to_dim();
-        let dec_seq: TDim = (DECODER_SEQ_LEN as i64).into();
-        let decoder_session = dec_model
-            .with_input_fact(
-                0,
-                InferenceFact::dt_shape(
-                    f32::datum_type(),
-                    vec![1.to_dim(), 250.to_dim(), 256.to_dim()],
-                ),
-            )?
-            .with_input_fact(
-                1,
-                InferenceFact::dt_shape(
-                    i32::datum_type(),
-                    vec![nb.clone(), dec_seq],
-                ),
-            )?
-            .with_input_fact(
-                2,
-                InferenceFact::dt_shape(i32::datum_type(), vec![nb.clone()]),
-            )?
-            .into_optimized()?
-            .into_runnable()?;
+        let encoder_session = Session::builder()?.commit_from_memory(&*encoder_bytes)?;
+        let decoder_session = Session::builder()?.commit_from_memory(&*decoder_bytes)?;
 
         let encoder = Encoder {
             session: encoder_session,
