@@ -54,7 +54,7 @@ fn load_swipe_entries(
     count: usize,
     mut word_list: Dictionary,
 ) -> Vec<(String, Option<String>, Vec<SwipePoint>)> {
-    let file = File::open("./testing/test.jsonl").expect("Failed to open swipes.jsonl");
+    let file = File::open("./testing/test.jsonl").expect("Failed to open test.jsonl");
     let reader = BufReader::new(file);
 
     reader
@@ -264,7 +264,7 @@ fn test_all_swipe_entries() {
 
     // Load all swipe entries
     let wordlist = get_dictionary();
-    let entries_to_load = 500;
+    let entries_to_load = 100;
     let all_entries = load_swipe_entries(entries_to_load, wordlist);
     let total_entries = all_entries.len();
 

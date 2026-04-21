@@ -1,16 +1,20 @@
+use std::path::Path;
 use crate::beam_search::BeamSearchEngine;
 use crate::decoder::Decoder;
 use crate::dictionary::Dictionary;
 use crate::encoder::Encoder;
 use crate::swipe_trajectory_processor::SwipeTrajectoryProcessor;
-use crate::{SwipeCandidate, SwipePoint};
+use crate::{SwipeCandidate, SwipePoint, DECODER_SEQ_LEN};
 use anyhow::Result;
 use cached_path::cached_path;
-use ort::session::Session;
-use std::fs;
+use tract_onnx::prelude::{DatumType, Framework, InferenceFact, InferenceModelExt, IntoRunnable, Symbol, SymbolValues, TDim};
+use tract_onnx::tract_core::dyn_clone::clone;
 
 const ASSET_COMPAT_VER: &str = "v0.1.2";
 const MAX_SEQUENCE_LENGTH: usize = 250; // max length of swipe points that can be processed by the model at once
+const BEAM_WIDTH: usize = 5;
+const ENC_SEQ_LEN: usize = 250;
+const HIDDEN_DIM: usize = 256;
 
 /// Top-level entry point for the swipe-to-type prediction pipeline.
 ///
@@ -80,18 +84,47 @@ impl SwipeOrchestrator {
             base_url
         ))?;
 
-        let encoder_bytes = fs::read(encoder_path)?;
-        let decoder_bytes = fs::read(decoder_path)?;
+        let decoder_path = Path::new("/home/diamond/Projects/add swipetype to wayvr/super-swipe-type/crates/super-swipe-type/assets/models/swipe_decoder_android.onnx");
+        let dec_proto = tract_onnx::onnx().model_for_path(decoder_path)?;
 
-        let encoder_session = Session::builder()?.commit_from_memory(&*encoder_bytes)?;
-        let decoder_session = Session::builder()?.commit_from_memory(&*decoder_bytes)?;
+        let num_beams_dim: TDim = dec_proto.symbols.sym("num_beams").into();
+
+        let dec_model = dec_proto
+            // input 0: memory  float32[1, enc_seq, hidden]
+            .with_input_fact(
+                0,
+                InferenceFact::dt_shape(
+                    DatumType::F32,
+                    &[1usize, ENC_SEQ_LEN, HIDDEN_DIM],
+                ),
+            )?
+            // input 1: target_tokens  int32[num_beams, dec_seq]
+            .with_input_fact(
+                1,
+                InferenceFact::dt_shape(
+                    DatumType::I32,
+                    &[num_beams_dim, TDim::from(DECODER_SEQ_LEN as usize)],
+                ),
+            )?
+            // input 2: actual_src_length  int32[1]
+            .with_input_fact(
+                2,
+                InferenceFact::dt_shape(DatumType::I32, &[1usize]),
+            )?
+            .into_optimized()?
+            .into_runnable()?;
+
+        let enc_model = tract_onnx::onnx()
+            .model_for_path(encoder_path)?
+            .into_optimized()?
+            .into_runnable()?;
 
         let encoder = Encoder {
-            session: encoder_session,
-            max_sequence_length: 250,
+            model: enc_model,
+            max_sequence_length: MAX_SEQUENCE_LENGTH,
         };
         let decoder = Decoder {
-            session: decoder_session,
+            model: dec_model,
             encode_result: None,
         };
 
@@ -101,7 +134,7 @@ impl SwipeOrchestrator {
             swipe_trajectory_processor: SwipeTrajectoryProcessor::new(MAX_SEQUENCE_LENGTH),
             encoder,
             decoder,
-            beam_search_engine: BeamSearchEngine::new(dictionary, 5, 8, 20, 1.0),
+            beam_search_engine: BeamSearchEngine::new(dictionary, BEAM_WIDTH as u32, 8, 20, 1.0),
         })
     }
     /// Runs the full swipe-to-type pipeline and returns word predictions.

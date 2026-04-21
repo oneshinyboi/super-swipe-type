@@ -9,8 +9,9 @@
       <excludeFolder url="file://$MODULE_DIR$/crates/super-swipe-type/target" />
       <excludeFolder url="file://$MODULE_DIR$/crates/target" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
+      <excludeFolder url="file://$MODULE_DIR$/.venv" />
     </content>
-    <orderEntry type="inheritedJdk" />
+    <orderEntry type="jdk" jdkName="Python 3.14 (super-swipe-type)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>

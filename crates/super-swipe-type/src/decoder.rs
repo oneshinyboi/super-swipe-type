@@ -1,13 +1,14 @@
 use crate::encoder::EncodeResult;
 use crate::{DECODER_SEQ_LEN, PAD_IDX};
 use anyhow::{anyhow, Result};
-use ort::session::Session;
-use ort::value::Tensor;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tract_onnx::prelude::{IntoTensor, RunnableModel, Tensor, TypedFact, TypedOp};
+use tract_onnx::prelude::tract_itertools::Itertools;
 
 #[derive(Debug)]
 pub(crate) struct Decoder {
-    pub(crate) session: Session,
+    pub(crate) model: Arc<RunnableModel<TypedFact,Box<dyn TypedOp>>>,
     pub(crate) encode_result: Option<EncodeResult>,
 }
 impl Decoder {
@@ -48,18 +49,16 @@ impl Decoder {
         ))?;
 
         let target_tokens_tensor =
-            Tensor::from_array(([num_beams, DECODER_SEQ_LEN.into()], batched_target_tokens))?;
+            Tensor::from_shape([num_beams, DECODER_SEQ_LEN.into()].as_slice(), batched_target_tokens.as_slice())?;
 
-        let mut decoder_inputs = HashMap::new();
-        decoder_inputs.insert("memory", encode_result.memory_tensor.clone().upcast());
-        decoder_inputs.insert(
-            "actual_src_length",
-            encode_result.actual_length_tensor.clone().upcast(),
-        );
-        decoder_inputs.insert("target_tokens", target_tokens_tensor.upcast());
+        let mut decoder_inputs = Vec::new();
+        decoder_inputs.push(encode_result.memory_tensor.clone().into());
+        decoder_inputs.push(target_tokens_tensor.into());
+        decoder_inputs.push(encode_result.actual_length_tensor.clone().into());
 
-        let output = self.session.run(decoder_inputs)?;
-        let (_shape, data) = output[0].try_extract_tensor::<f32>()?;
+        let output = self.model.run(decoder_inputs.into())?;
+        let output= output.into_iter().next().unwrap().into_tensor();
+        let (data, _) = output.into_plain_array::<f32>()?.into_raw_vec_and_offset();
 
         // un-flatten data output tensor
         Ok(data
