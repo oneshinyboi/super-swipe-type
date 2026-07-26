@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::io::Cursor;
 use crate::beam_search::BeamSearchEngine;
 use crate::decoder::Decoder;
 use crate::dictionary::Dictionary;
@@ -7,11 +7,11 @@ use crate::swipe_trajectory_processor::SwipeTrajectoryProcessor;
 use crate::{SwipeCandidate, SwipePoint, DECODER_SEQ_LEN};
 use anyhow::Result;
 use cached_path::cached_path;
-use tract_onnx::prelude::{DatumType, Framework, InferenceFact, InferenceModelExt, IntoRunnable, Symbol, SymbolValues, TDim};
-use tract_onnx::tract_core::dyn_clone::clone;
+use tract_onnx::prelude::*;
+use std::fs;
 
 const ASSET_COMPAT_VER: &str = "v0.1.2";
-const MAX_SEQUENCE_LENGTH: usize = 250; // max length of swipe points that can be processed by the model at once
+const MAX_SEQUENCE_LENGTH: usize = 250;
 const BEAM_WIDTH: usize = 5;
 const ENC_SEQ_LEN: usize = 250;
 const HIDDEN_DIM: usize = 256;
@@ -84,47 +84,65 @@ impl SwipeOrchestrator {
             base_url
         ))?;
 
-        let decoder_path = Path::new("/home/diamond/Projects/add swipetype to wayvr/super-swipe-type/crates/super-swipe-type/assets/models/swipe_decoder_android.onnx");
-        let dec_proto = tract_onnx::onnx().model_for_path(decoder_path)?;
+        let encoder_bytes = fs::read(encoder_path)?;
+        let decoder_bytes = fs::read(decoder_path)?;
 
-        let num_beams_dim: TDim = dec_proto.symbols.sym("num_beams").into();
+        // Clear value_info-sourced facts so tract's shape inference starts
+        // fresh from our concrete input facts without conflicting symbolic dims.
+        let mut enc_model = tract_onnx::onnx()
+            .model_for_read(&mut Cursor::new(&encoder_bytes))?;
+        for node in enc_model.nodes_mut() {
+            for outlet in &mut node.outputs {
+                outlet.fact = InferenceFact::default();
+            }
+        }
+        let encoder_session = enc_model
+            .with_input_fact(0, f32::fact([1usize, ENC_SEQ_LEN, 6]).into())?
+            .with_input_fact(1, i32::fact([1usize, ENC_SEQ_LEN]).into())?
+            .with_input_fact(2, i32::fact([1usize]).into())?
+            .into_typed()?
+            .into_decluttered()?
+            .into_runnable()?;
 
-        let dec_model = dec_proto
-            // input 0: memory  float32[1, enc_seq, hidden]
+        let mut dec_model = tract_onnx::onnx()
+            .model_for_read(&mut Cursor::new(&decoder_bytes))?;
+        for node in dec_model.nodes_mut() {
+            for outlet in &mut node.outputs {
+                outlet.fact = InferenceFact::default();
+            }
+        }
+
+        let nb: TDim = dec_model.symbols.sym("num_beams").into();
+        let dec_seq: TDim = (DECODER_SEQ_LEN as i64).into();
+        let decoder_session = dec_model
             .with_input_fact(
                 0,
                 InferenceFact::dt_shape(
-                    DatumType::F32,
-                    &[1usize, ENC_SEQ_LEN, HIDDEN_DIM],
+                    f32::datum_type(),
+                    &[1.to_dim(), ENC_SEQ_LEN.to_dim(), HIDDEN_DIM.to_dim()],
                 ),
             )?
-            // input 1: target_tokens  int32[num_beams, dec_seq]
             .with_input_fact(
                 1,
                 InferenceFact::dt_shape(
-                    DatumType::I32,
-                    &[num_beams_dim, TDim::from(DECODER_SEQ_LEN as usize)],
+                    i32::datum_type(),
+                    &[nb.clone(), dec_seq],
                 ),
             )?
-            // input 2: actual_src_length  int32[1]
             .with_input_fact(
                 2,
-                InferenceFact::dt_shape(DatumType::I32, &[1usize]),
+                InferenceFact::dt_shape(i32::datum_type(), &[1.to_dim()]),
             )?
-            .into_optimized()?
-            .into_runnable()?;
-
-        let enc_model = tract_onnx::onnx()
-            .model_for_path(encoder_path)?
-            .into_optimized()?
+            .into_typed()?
+            .into_decluttered()?
             .into_runnable()?;
 
         let encoder = Encoder {
-            model: enc_model,
+            model: encoder_session,
             max_sequence_length: MAX_SEQUENCE_LENGTH,
         };
         let decoder = Decoder {
-            model: dec_model,
+            model: decoder_session,
             encode_result: None,
         };
 
