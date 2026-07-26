@@ -31,7 +31,7 @@ impl Encoder {
         let output = self.model.run(input_features.into())?;
 
         let mut memory_tensor = output.into_iter().next().unwrap().into_tensor();
-        //memory_tensor.set_shape(&[1, self.max_sequence_length, 256])?;
+        memory_tensor.set_shape(&[1, self.max_sequence_length, 256])?;
 
         Ok(EncodeResult {
             memory_tensor,
