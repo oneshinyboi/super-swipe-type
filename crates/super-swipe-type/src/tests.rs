@@ -10,6 +10,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use vector2::Vector2;
+use crate::keyboard_manager::KeyTokenizer;
+use crate::{SOS_IDX, PAD_IDX, EOS_IDX};
 
 #[derive(Debug, Deserialize)]
 struct SwipeEntry {
@@ -477,4 +479,156 @@ fn test_all_swipe_entries_single_threaded() {
         successful > 0,
         "At least one entry should process successfully"
     );
+}
+
+#[test]
+fn test_diagnostic_tensor_dump() {
+    println!("\n========== DIAGNOSTIC TENSOR DUMP ==========");
+
+    let mut orchestrator = SwipeOrchestrator::new().expect("Failed to create SwipeOrchestrator");
+
+    // Simulate a swipe typing "hello":
+    // Key positions (approximately):
+    //   h: (0.60, 0.50)  — row 1, col 5
+    //   e: (0.25, 0.167) — row 0, col 2
+    //   l: (0.80, 0.50)  — row 1, col 7
+    //   o: (0.75, 0.167) — row 0, col 7
+    let swipe_points = vec![
+        SwipePoint::new(0.60, 0.50, Duration::from_millis(0)),   // h
+        SwipePoint::new(0.45, 0.35, Duration::from_millis(30)),  // mid
+        SwipePoint::new(0.30, 0.20, Duration::from_millis(60)),  // near e
+        SwipePoint::new(0.25, 0.167, Duration::from_millis(80)), // e
+        SwipePoint::new(0.50, 0.33, Duration::from_millis(120)), // mid
+        SwipePoint::new(0.75, 0.50, Duration::from_millis(160)), // near l
+        SwipePoint::new(0.80, 0.50, Duration::from_millis(180)), // l
+        SwipePoint::new(0.78, 0.33, Duration::from_millis(210)), // mid
+        SwipePoint::new(0.75, 0.167, Duration::from_millis(240)),// o
+    ];
+
+    // ---- Step 1: Extract features ----
+    use crate::swipe_trajectory_processor::SwipeTrajectoryProcessor;
+    let proc = SwipeTrajectoryProcessor::new(250);
+    let features = proc.extract_features(swipe_points.clone());
+    println!("\n[ENCODER INPUT]");
+    println!("  Sequence length (actual): {}", features.len());
+    println!("  Padded to: 250");
+    println!("  Channel dimension: 6 (x,y, vx,vy, ax,ay)");
+    println!("  First 3 feature points:");
+    for (i, fp) in features.iter().take(3).enumerate() {
+        println!("    [{i}] pos=({:.4},{:.4}) vel=({:.4},{:.4}) acc=({:.4},{:.4}) key={}",
+            fp.point.x, fp.point.y, fp.velocity.x, fp.velocity.y,
+            fp.acceleration.x, fp.acceleration.y, fp.nearest_key);
+    }
+    println!("  Last feature point: pos=({:.4},{:.4}) key={}",
+        features.last().unwrap().point.x, features.last().unwrap().point.y,
+        features.last().unwrap().nearest_key);
+
+    // ---- Step 2: Run encoder and dump output ----
+    let encode_result = orchestrator.encoder_mut().encode(features)
+        .expect("Encoder failed");
+    orchestrator.decoder_mut().set_encode_result(encode_result);
+
+    let enc_result = orchestrator.decoder_mut().encode_result.as_ref().unwrap();
+    let mem = &enc_result.memory_tensor;
+    let act = &enc_result.actual_length_tensor;
+
+    println!("\n[ENCODER OUTPUT]");
+    println!("  memory_tensor shape: {:?}", mem.shape());
+    println!("  memory_tensor dtype: {:?}", mem.datum_type());
+    println!("  actual_length_tensor shape: {:?}", act.shape());
+    let act_val = unsafe { act.as_slice_unchecked::<i32>() };
+    println!("  actual_length_tensor value: {:?}", act_val);
+
+    // Dump first and last 5 values of memory tensor
+    let data: &[f32] = unsafe { mem.as_slice_unchecked::<f32>() };
+    let has_nan = data.iter().any(|v| v.is_nan());
+    let has_inf = data.iter().any(|v| v.is_infinite());
+    let all_zero = data.iter().all(|v| *v == 0.0);
+    let (min, max) = data.iter().fold((f32::MAX, f32::MIN),
+        |(min, max), &v| (min.min(v), max.max(v)));
+    let mean = data.iter().sum::<f32>() / data.len() as f32;
+
+    println!("  memory_tensor diagnostics:");
+    println!("    min={:.6} max={:.6} mean={:.6}", min, max, mean);
+    println!("    NaN present: {}, Inf present: {}", has_nan, has_inf);
+    println!("    all-zero: {}", all_zero);
+    println!("  memory_tensor first 10 values: {:?}", &data[..10.min(data.len())]);
+    println!("  memory_tensor last 10 values: {:?}", &data[data.len().saturating_sub(10)..]);
+    println!("  memory_tensor values at [0,0,0..10]: {:?}", &data[..10.min(data.len())]);
+    println!("  memory_tensor values at [0,249,246..256]: {:?}",
+        &data[data.len().saturating_sub(10)..]);
+
+    // ---- Step 3: Run decoder with SOS token only ----
+    println!("\n[DECODER FIRST-STEP LOGITS]");
+    let dec = orchestrator.decoder_mut();
+    let logits = dec.decode(&vec![SOS_IDX as i32])
+        .expect("Decoder failed");
+    // logits is Vec<Vec<Vec<f32>>> where outer is beams (1), middle is steps (20), inner is vocab (30)
+    println!("  Output shape: [{} beams, {} steps, {} vocab]",
+        logits.len(), logits.first().map_or(0, |v| v.len()), logits.first().and_then(|v| v.first()).map_or(0, |v| v.len()));
+
+    if let Some(step0_logits) = logits.first().and_then(|b| b.first()) {
+        let has_nan = step0_logits.iter().any(|v| v.is_nan());
+        let has_inf = step0_logits.iter().any(|v| v.is_infinite());
+        let all_neg_inf = step0_logits.iter().all(|v| v.is_infinite() && *v < 0.0);
+        println!("  Step 0 logits: NaN={} Inf={} all-neg-inf={}",
+            has_nan, has_inf, all_neg_inf);
+
+        // Show top 8 token indices by logit value
+        let mut indexed: Vec<(usize, f32)> = step0_logits.iter().enumerate()
+            .map(|(i, &v)| (i, v))
+            .collect();
+        indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        println!("  Top 8 tokens after SOS:");
+        for (idx, val) in indexed.iter().take(8) {
+            let char = KeyTokenizer::index_to_char(*idx as u8);
+            let label = match *idx as u8 {
+                PAD_IDX => "PAD",
+                SOS_IDX => "SOS",
+                EOS_IDX => "EOS",
+                _ => "",
+            };
+            println!("    idx={:2} val={:9.4} char={:?} {}",
+                idx, val, char, label);
+        }
+    }
+
+    // ---- Step 4: Full beam search decode ----
+    println!("\n[BEAM SEARCH TRAJECTORY]");
+    let candidates = orchestrator.predict(swipe_points, &None)
+        .expect("Predict failed");
+
+    println!("\n  Candidates found: {}", candidates.len());
+    for (i, c) in candidates.iter().take(10).enumerate() {
+        println!("    {}. \"{}\" (confidence: {:.6})", i + 1, c.word, c.confidence);
+    }
+
+    // ---- Step 5: Check that the decoded characters are sane ----
+    println!("\n[SANITY CHECKS]");
+    for c in &candidates {
+        let all_ascii = c.word.chars().all(|ch| ch.is_ascii_lowercase());
+        if !all_ascii {
+            println!("  WARNING: candidate \"{}\" contains non-lowercase chars!", c.word);
+        }
+        if c.word.len() > 20 {
+            println!("  WARNING: candidate \"{}\" exceeds max seq len 20!", c.word);
+        }
+        if c.confidence.is_nan() || c.confidence <= 0.0 || c.confidence > 1.0 {
+            println!("  WARNING: candidate \"{}\" has invalid confidence: {}", c.word, c.confidence);
+        }
+    }
+
+    // Assert at least one valid-looking candidate
+    let valid = candidates.iter().any(|c| {
+        c.word.len() >= 1
+            && c.word.len() <= 20
+            && c.word.chars().all(|ch| ch.is_ascii_lowercase())
+            && !c.confidence.is_nan()
+            && c.confidence > 0.0
+            && c.confidence <= 1.0
+    });
+    assert!(valid, "No valid candidate produced!");
+
+    println!("  All sanity checks passed (at least one valid candidate).");
+    println!("=================================================\n");
 }

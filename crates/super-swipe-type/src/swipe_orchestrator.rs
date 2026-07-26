@@ -179,4 +179,11 @@ impl SwipeOrchestrator {
             .beam_search_engine
             .search(prev_word, &mut self.decoder)?)
     }
+
+    pub(crate) fn encoder_mut(&mut self) -> &mut Encoder {
+        &mut self.encoder
+    }
+    pub(crate) fn decoder_mut(&mut self) -> &mut Decoder {
+        &mut self.decoder
+    }
 }
