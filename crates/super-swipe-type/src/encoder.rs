@@ -1,7 +1,5 @@
 use crate::keyboard_manager::KeyTokenizer;
 use crate::swipe_trajectory_processor::FeaturePoint;
-use ort::session::Session;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tract_onnx::prelude::{IntoRunnable, IntoTensor, Runnable, RunnableModel, TVec, Tensor, TractResult, TypedFact, TypedModel, TypedOp};
 
