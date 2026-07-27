@@ -6,7 +6,7 @@ use crate::swipe_trajectory_processor::SwipeTrajectoryProcessor;
 use crate::{SwipeCandidate, SwipePoint};
 use anyhow::Result;
 use cached_path::cached_path;
-use ort::session::Session;
+use rten::Model;
 use std::fs;
 
 const ASSET_COMPAT_VER: &str = "v0.1.2";
@@ -83,17 +83,11 @@ impl SwipeOrchestrator {
         let encoder_bytes = fs::read(encoder_path)?;
         let decoder_bytes = fs::read(decoder_path)?;
 
-        let encoder_session = Session::builder()?.commit_from_memory(&*encoder_bytes)?;
-        let decoder_session = Session::builder()?.commit_from_memory(&*decoder_bytes)?;
+        let encoder_model = Model::load(encoder_bytes)?;
+        let decoder_model = Model::load(decoder_bytes)?;
 
-        let encoder = Encoder {
-            session: encoder_session,
-            max_sequence_length: 250,
-        };
-        let decoder = Decoder {
-            session: decoder_session,
-            encode_result: None,
-        };
+        let encoder = Encoder::new(encoder_model, MAX_SEQUENCE_LENGTH)?;
+        let decoder = Decoder::new(decoder_model)?;
 
         let dictionary = Dictionary::create_from_file(&unigram_path, &bigram_path)?;
 
@@ -145,5 +139,12 @@ impl SwipeOrchestrator {
         Ok(self
             .beam_search_engine
             .search(prev_word, &mut self.decoder)?)
+    }
+
+    pub(crate) fn encoder_mut(&mut self) -> &mut Encoder {
+        &mut self.encoder
+    }
+    pub(crate) fn decoder_mut(&mut self) -> &mut Decoder {
+        &mut self.decoder
     }
 }
