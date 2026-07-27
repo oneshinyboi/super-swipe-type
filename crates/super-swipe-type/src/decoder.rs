@@ -1,16 +1,29 @@
 use crate::encoder::EncodeResult;
 use crate::{DECODER_SEQ_LEN, PAD_IDX};
 use anyhow::{anyhow, Result};
-use ort::session::Session;
-use ort::value::Tensor;
-use std::collections::HashMap;
+use rten::{Model, NodeId, Value};
 
 #[derive(Debug)]
 pub(crate) struct Decoder {
-    pub(crate) session: Session,
+    pub(crate) model: Model,
     pub(crate) encode_result: Option<EncodeResult>,
+    input_memory: NodeId,
+    input_target_tokens: NodeId,
+    input_actual_src_length: NodeId,
+    output_node: NodeId,
 }
 impl Decoder {
+    pub fn new(model: Model) -> Result<Self> {
+        Ok(Self {
+            input_memory: model.node_id("memory")?,
+            input_target_tokens: model.node_id("target_tokens")?,
+            input_actual_src_length: model.node_id("actual_src_length")?,
+            output_node: model.node_id("log_probs")?,
+            model,
+            encode_result: None,
+        })
+    }
+
     pub fn decode(&mut self, tokens: &Vec<i32>) -> Result<Vec<Vec<Vec<f32>>>> {
         let mut target_tokens = tokens.clone();
         target_tokens.resize(DECODER_SEQ_LEN.into(), PAD_IDX.into());
@@ -30,7 +43,6 @@ impl Decoder {
     pub fn decode_batched(&mut self, batched_tokens: &Vec<Vec<i32>>) -> Result<Vec<Vec<Vec<f32>>>> {
         let mut batched_target_tokens: Vec<i32> = Vec::new();
 
-        // flatten and resize to correct sequence length
         batched_target_tokens.extend(batched_tokens.iter().flat_map(|token| {
             let mut new_token = token.clone();
             new_token.resize(DECODER_SEQ_LEN.into(), PAD_IDX.into());
@@ -47,23 +59,27 @@ impl Decoder {
             "use set_encode_result to provide the required tensors before running inference"
         ))?;
 
-        let target_tokens_tensor =
-            Tensor::from_array(([num_beams, DECODER_SEQ_LEN.into()], batched_target_tokens))?;
+        let target_tokens_value =
+            Value::from_shape([num_beams, DECODER_SEQ_LEN.into()], batched_target_tokens)?;
 
-        let mut decoder_inputs = HashMap::new();
-        decoder_inputs.insert("memory", encode_result.memory_tensor.clone().upcast());
-        decoder_inputs.insert(
-            "actual_src_length",
-            encode_result.actual_length_tensor.clone().upcast(),
-        );
-        decoder_inputs.insert("target_tokens", target_tokens_tensor.upcast());
+        let inputs = vec![
+            (self.input_memory, encode_result.memory_tensor.clone().into()),
+            (self.input_target_tokens, target_tokens_value.into()),
+            (self.input_actual_src_length, encode_result.actual_length_tensor.clone().into()),
+        ];
 
-        let output = self.session.run(decoder_inputs)?;
-        let (_shape, data) = output[0].try_extract_tensor::<f32>()?;
+        let outputs = [self.output_node];
+        let [output] = self
+            .model
+            .run_n(inputs, outputs, None)
+            .map_err(|e| anyhow!("Decoder inference failed: {}", e))?;
 
-        // un-flatten data output tensor
+        let (_, data) = output
+            .into_shape_vec::<f32, 3>()
+            .map_err(|e| anyhow!("Failed to extract decoder output: {}", e))?;
+
         Ok(data
-            .chunks_exact(DECODER_SEQ_LEN as usize * 30) // todo: explain why 30 is 30
+            .chunks_exact(DECODER_SEQ_LEN as usize * 30)
             .map(|beam_slice| {
                 beam_slice
                     .chunks_exact(30)
