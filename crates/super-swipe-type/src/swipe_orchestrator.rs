@@ -10,7 +10,7 @@ use rten::Model;
 use std::fs;
 use std::path::Path;
 
-const ASSET_COMPAT_VER: &str = "v0.1.2";
+const ASSET_COMPAT_VER: &str = "v0.4.2";
 const MAX_SEQUENCE_LENGTH: usize = 250; // max length of swipe points that can be processed by the model at once
 
 const ENCODER_PATH: &str = "models/swipe_encoder_android.onnx";
