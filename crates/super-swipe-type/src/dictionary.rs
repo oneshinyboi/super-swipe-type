@@ -214,8 +214,16 @@ impl Dictionary {
         unigram_bytes: &'static [u8],
         bigram_bytes: &'static [u8],
     ) -> Result<Self, DictionaryCreationError> {
-        let unigrams = Map::new(unigram_bytes[..].into())?;
-        let bigrams = Map::new(bigram_bytes[..].into())?;
+        Self::create_from_bytes(unigram_bytes.to_vec(), bigram_bytes.to_vec())
+    }
+
+    /// Creates a Dictionary from owned byte arrays.
+    pub fn create_from_bytes(
+        unigram_bytes: Vec<u8>,
+        bigram_bytes: Vec<u8>,
+    ) -> Result<Self, DictionaryCreationError> {
+        let unigrams = Map::new(unigram_bytes)?;
+        let bigrams = Map::new(bigram_bytes)?;
 
         Ok(Self {
             unigrams,

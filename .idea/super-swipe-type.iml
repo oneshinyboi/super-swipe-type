@@ -6,6 +6,7 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/super-swipe-type/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/vocab-builder/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/super-swipe-type/tests" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/crates/super-swipe-type/target" />
       <excludeFolder url="file://$MODULE_DIR$/crates/target" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
